@@ -22,6 +22,7 @@ impl MemoryService {
         &self,
         session_id: Option<&str>,
         include_previous: bool,
+        previous_limit: usize,
     ) -> Result<String> {
         let conn = &*self.db.reader();
 
@@ -68,7 +69,7 @@ impl MemoryService {
 
         // Include previous sessions if requested
         if include_previous {
-            let previous = session::get_previous_sessions(conn, &current_session.id, 3)?;
+            let previous = session::get_previous_sessions(conn, &current_session.id, previous_limit)?;
             if !previous.is_empty() {
                 output.push_str("\n---\n\n## Previous Sessions\n\n");
                 for prev in &previous {

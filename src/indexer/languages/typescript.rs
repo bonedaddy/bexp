@@ -58,7 +58,7 @@ fn extract_from_node(
                 extract_calls(node, source, idx, unresolved_refs);
                 // Recurse into children with this as parent
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
                     }
                 }
@@ -80,7 +80,7 @@ fn extract_from_node(
                 // Check for extends/implements
                 extract_heritage(node, source, idx, unresolved_refs);
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
                     }
                 }
@@ -101,7 +101,7 @@ fn extract_from_node(
                 }
                 extract_heritage(node, source, idx, unresolved_refs);
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
                     }
                 }
@@ -142,7 +142,7 @@ fn extract_from_node(
         "export_statement" => {
             // Process the exported declaration
             for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
+                if let Some(child) = node.child(i as u32) {
                     extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, parent_idx);
                     // Mark last added node as export
                     if !nodes.is_empty() {
@@ -160,7 +160,7 @@ fn extract_from_node(
 
     // Default: recurse into children
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, parent_idx);
         }
     }
@@ -172,7 +172,7 @@ fn get_node_text<'a>(node: Node, source: &'a str) -> &'a str {
 
 fn find_child_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             if child.kind() == kind {
                 return Some(child);
             }
@@ -395,7 +395,7 @@ fn extract_import_names(
     unresolved_refs: &mut Vec<UnresolvedRef>,
 ) {
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             match child.kind() {
                 "identifier" | "type_identifier" => {
                     let name = get_node_text(child, source).to_string();
@@ -435,11 +435,11 @@ fn extract_heritage(
     unresolved_refs: &mut Vec<UnresolvedRef>,
 ) {
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             match child.kind() {
                 "class_heritage" | "extends_clause" => {
                     for j in 0..child.child_count() {
-                        if let Some(name_node) = child.child(j) {
+                        if let Some(name_node) = child.child(j as u32) {
                             if name_node.kind() == "identifier" || name_node.kind() == "type_identifier" {
                                 let name = get_node_text(name_node, source).to_string();
                                 unresolved_refs.push(UnresolvedRef {
@@ -455,7 +455,7 @@ fn extract_heritage(
                 }
                 "implements_clause" => {
                     for j in 0..child.child_count() {
-                        if let Some(name_node) = child.child(j) {
+                        if let Some(name_node) = child.child(j as u32) {
                             if name_node.kind() == "identifier" || name_node.kind() == "type_identifier" {
                                 let name = get_node_text(name_node, source).to_string();
                                 unresolved_refs.push(UnresolvedRef {
@@ -501,7 +501,7 @@ fn extract_calls(
     }
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             // Skip nested function bodies to avoid deep recursion of call extraction
             if child.kind() == "arrow_function" || child.kind() == "function" {
                 continue;
@@ -520,7 +520,7 @@ fn extract_variable_declaration(
     edges: &mut Vec<ExtractedEdge>,
 ) {
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             if child.kind() == "variable_declarator" {
                 if let Some(name_node) = find_child_by_kind(child, "identifier") {
                     let name = get_node_text(name_node, source).to_string();

@@ -36,7 +36,7 @@ fn get_node_text<'a>(node: Node, source: &'a str) -> &'a str {
 
 fn find_child_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             if child.kind() == kind {
                 return Some(child);
             }
@@ -93,7 +93,7 @@ fn extract_from_node(
                 }
                 extract_calls(node, source, idx, unresolved_refs);
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
                     }
                 }
@@ -141,7 +141,7 @@ fn extract_from_node(
                     });
                 }
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
                     }
                 }
@@ -163,7 +163,7 @@ fn extract_from_node(
                 // Check for trait implementation
                 extract_impl_trait_ref(node, source, idx, unresolved_refs);
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
                     }
                 }
@@ -214,7 +214,7 @@ fn extract_from_node(
                     });
                 }
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
                     }
                 }
@@ -225,7 +225,7 @@ fn extract_from_node(
     }
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, parent_idx);
         }
     }
@@ -364,7 +364,7 @@ fn extract_impl_trait_ref(
         // The trait name is typically the first type_identifier after "impl"
         let mut found_impl = false;
         for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
+            if let Some(child) = node.child(i as u32) {
                 if child.kind() == "impl" {
                     found_impl = true;
                     continue;
@@ -489,21 +489,21 @@ fn extract_use(
             }
             "use_list" | "use_group" => {
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         collect_use_names(child, source, idx, refs);
                     }
                 }
             }
             "scoped_identifier" | "use_as_clause" | "scoped_use_list" => {
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         collect_use_names(child, source, idx, refs);
                     }
                 }
             }
             _ => {
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         collect_use_names(child, source, idx, refs);
                     }
                 }
@@ -512,7 +512,7 @@ fn extract_use(
     }
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             if child.kind() != "use" && child.kind() != "visibility_modifier" {
                 collect_use_names(child, source, idx, unresolved_refs);
             }
@@ -540,7 +540,7 @@ fn extract_calls(
     }
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             if child.kind() == "closure_expression" {
                 continue;
             }

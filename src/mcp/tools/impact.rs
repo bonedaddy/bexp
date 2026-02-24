@@ -11,7 +11,12 @@ pub async fn handle(
 
     let result = server
         .graph
-        .impact_graph(&params.symbol, direction, depth)
+        .impact_graph(
+            &params.symbol,
+            direction,
+            depth,
+            params.edge_kinds.as_deref(),
+        )
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
     Ok(CallToolResult::success(vec![Content::text(result)]))

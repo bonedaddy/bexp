@@ -42,9 +42,20 @@ impl CapsuleGenerator {
         query: &str,
         token_budget: usize,
         session_id: Option<&str>,
+        intent_override: Option<&str>,
     ) -> Result<String> {
-        // 1. Detect intent
-        let intent = intent::detect_intent(query);
+        // 1. Detect intent (or use override)
+        let intent = if let Some(name) = intent_override {
+            match name {
+                "debug" => crate::types::Intent::Debug,
+                "blast_radius" => crate::types::Intent::BlastRadius,
+                "modify" => crate::types::Intent::Modify,
+                "explore" => crate::types::Intent::Explore,
+                _ => intent::detect_intent(query),
+            }
+        } else {
+            intent::detect_intent(query)
+        };
         tracing::debug!("Detected intent: {:?}", intent);
 
         // 2. Hybrid search for relevant nodes

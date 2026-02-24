@@ -64,7 +64,7 @@ fn transform_node(
     let mut last_end = node.start_byte();
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             // Add any whitespace/text between children
             if child.start_byte() > last_end {
                 result.push_str(&source[last_end..child.start_byte()]);
@@ -98,7 +98,7 @@ fn collapse_body(
     let mut body_node = None;
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             if child.kind() == body_kind {
                 body_node = Some(child);
                 break;
@@ -145,7 +145,7 @@ fn extract_first_level_stubs(
     let mut stubs = Vec::new();
 
     for i in 0..body_node.child_count() {
-        if let Some(child) = body_node.child(i) {
+        if let Some(child) = body_node.child(i as u32) {
             let kind = child.kind();
 
             // Skip braces and delimiters
@@ -177,7 +177,7 @@ fn collapse_body_detailed(
     let mut last_end = body_node.start_byte();
 
     for i in 0..body_node.child_count() {
-        if let Some(child) = body_node.child(i) {
+        if let Some(child) = body_node.child(i as u32) {
             if child.start_byte() > last_end {
                 result.push_str(&source[last_end..child.start_byte()]);
             }

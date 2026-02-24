@@ -36,7 +36,7 @@ fn get_node_text<'a>(node: Node, source: &'a str) -> &'a str {
 
 fn find_child_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             if child.kind() == kind {
                 return Some(child);
             }
@@ -59,7 +59,7 @@ fn find_identifier_in_declarator(node: Node, source: &str) -> Option<String> {
         "pointer_declarator" | "function_declarator" | "array_declarator"
         | "parenthesized_declarator" | "reference_declarator" => {
             for i in 0..node.named_child_count() {
-                if let Some(child) = node.named_child(i) {
+                if let Some(child) = node.named_child(i as u32) {
                     if let Some(name) = find_identifier_in_declarator(child, source) {
                         return Some(name);
                     }
@@ -160,7 +160,7 @@ fn extract_from_node(
                 extract_base_classes(node, source, idx, unresolved_refs);
                 // Recurse into class body for methods
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
                     }
                 }
@@ -180,7 +180,7 @@ fn extract_from_node(
                     });
                 }
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
                     }
                 }
@@ -190,7 +190,7 @@ fn extract_from_node(
         "template_declaration" => {
             // Pass through to extract the inner declaration
             for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
+                if let Some(child) = node.child(i as u32) {
                     let k = child.kind();
                     if k == "function_definition" || k == "class_specifier"
                         || k == "struct_specifier" || k == "alias_declaration"
@@ -271,7 +271,7 @@ fn extract_from_node(
     }
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, parent_idx);
         }
     }
@@ -370,7 +370,7 @@ fn extract_base_classes(
 ) {
     if let Some(base_list) = find_child_by_kind(node, "base_class_clause") {
         for i in 0..base_list.named_child_count() {
-            if let Some(child) = base_list.named_child(i) {
+            if let Some(child) = base_list.named_child(i as u32) {
                 // base_class_clause contains type_identifier or qualified_identifier children
                 let base_name = get_node_text(child, source).to_string();
                 // Skip access specifiers
@@ -536,7 +536,7 @@ fn extract_calls(
     }
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             extract_calls(child, source, parent_idx, unresolved_refs);
         }
     }

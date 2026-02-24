@@ -35,7 +35,7 @@ fn get_node_text<'a>(node: Node, source: &'a str) -> &'a str {
 
 fn find_child_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             if child.kind() == kind {
                 return Some(child);
             }
@@ -53,7 +53,7 @@ fn get_tag_name(node: Node, source: &str) -> Option<String> {
 fn get_attribute_value(node: Node, source: &str, attr_name: &str) -> Option<String> {
     let start_tag = find_child_by_kind(node, "start_tag")?;
     for i in 0..start_tag.child_count() {
-        if let Some(child) = start_tag.child(i) {
+        if let Some(child) = start_tag.child(i as u32) {
             if child.kind() == "attribute" {
                 if let Some(name_node) = find_child_by_kind(child, "attribute_name") {
                     if get_node_text(name_node, source) == attr_name {
@@ -152,7 +152,7 @@ fn extract_from_node(
     }
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             extract_from_node(child, source, file_path, nodes, unresolved_refs);
         }
     }

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "vexp": {
+      "command": "vexp",
+      "args": ["serve"]
+    }
+  }
+}

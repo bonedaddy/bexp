@@ -36,7 +36,7 @@ fn get_node_text<'a>(node: Node, source: &'a str) -> &'a str {
 
 fn find_child_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             if child.kind() == kind {
                 return Some(child);
             }
@@ -69,7 +69,7 @@ fn extract_from_node(
                 }
                 extract_calls(node, source, idx, unresolved_refs);
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
                     }
                 }
@@ -91,7 +91,7 @@ fn extract_from_node(
                 // Check for base classes
                 if let Some(args) = find_child_by_kind(node, "argument_list") {
                     for i in 0..args.child_count() {
-                        if let Some(arg) = args.child(i) {
+                        if let Some(arg) = args.child(i as u32) {
                             if arg.kind() == "identifier" {
                                 let name = get_node_text(arg, source).to_string();
                                 unresolved_refs.push(UnresolvedRef {
@@ -106,7 +106,7 @@ fn extract_from_node(
                     }
                 }
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
                     }
                 }
@@ -129,7 +129,7 @@ fn extract_from_node(
     }
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, parent_idx);
         }
     }
@@ -273,7 +273,7 @@ fn extract_import(
 
     // Extract imported names
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             if child.kind() == "aliased_import" || child.kind() == "dotted_name" {
                 if let Some(name_node) = child.child(0) {
                     if name_node.kind() == "identifier" {
@@ -359,7 +359,7 @@ fn extract_calls(
     }
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             if child.kind() == "function_definition" || child.kind() == "lambda" {
                 continue;
             }

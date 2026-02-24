@@ -36,7 +36,7 @@ fn get_node_text<'a>(node: Node, source: &'a str) -> &'a str {
 
 fn find_child_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             if child.kind() == kind {
                 return Some(child);
             }
@@ -58,7 +58,7 @@ fn find_identifier_in_declarator(node: Node, source: &str) -> Option<String> {
         | "parenthesized_declarator" => {
             // The declarator child is typically the first named child
             for i in 0..node.named_child_count() {
-                if let Some(child) = node.named_child(i) {
+                if let Some(child) = node.named_child(i as u32) {
                     if let Some(name) = find_identifier_in_declarator(child, source) {
                         return Some(name);
                     }
@@ -182,7 +182,7 @@ fn extract_from_node(
     }
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, parent_idx);
         }
     }
@@ -360,7 +360,7 @@ fn extract_calls(
     }
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             extract_calls(child, source, parent_idx, unresolved_refs);
         }
     }

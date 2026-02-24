@@ -37,6 +37,8 @@ pub struct CapsuleParams {
     pub token_budget: Option<usize>,
     #[schemars(description = "Session ID for memory integration")]
     pub session_id: Option<String>,
+    #[schemars(description = "Override auto-detected intent: 'debug', 'blast_radius', 'modify', 'explore'")]
+    pub intent: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -47,6 +49,8 @@ pub struct ImpactParams {
     pub direction: Option<String>,
     #[schemars(description = "Maximum traversal depth (default: 3)")]
     pub depth: Option<usize>,
+    #[schemars(description = "Filter edge kinds to traverse, e.g. ['calls', 'imports']")]
+    pub edge_kinds: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -92,6 +96,8 @@ pub struct SessionParams {
     pub session_id: Option<String>,
     #[schemars(description = "Include observations from previous sessions")]
     pub include_previous: Option<bool>,
+    #[schemars(description = "Number of previous sessions to include (default: 3)")]
+    pub previous_limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -114,6 +120,80 @@ pub struct ObserveParams {
     pub symbols: Option<Vec<String>>,
     #[schemars(description = "File paths this observation relates to")]
     pub files: Option<Vec<String>>,
+}
+
+// -- New tool parameter types --
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct QueryNodesParams {
+    #[schemars(description = "Search term to match against symbol names")]
+    pub query: Option<String>,
+    #[schemars(description = "Filter by node kind: function, method, class, struct, interface, enum, trait, impl, module, variable, constant, import")]
+    pub kind: Option<String>,
+    #[schemars(description = "Filter by file path (substring match)")]
+    pub file_path: Option<String>,
+    #[schemars(description = "Filter by visibility: public, private, protected")]
+    pub visibility: Option<String>,
+    #[schemars(description = "Only return exported symbols")]
+    pub exported_only: Option<bool>,
+    #[schemars(description = "Include PageRank centrality scores")]
+    pub include_pagerank: Option<bool>,
+    #[schemars(description = "Maximum results (default: 50)")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct QueryEdgesParams {
+    #[schemars(description = "Symbol name to filter edges by")]
+    pub symbol: Option<String>,
+    #[schemars(description = "Filter by edge kind: calls, imports, implements, extends, type_ref, contains")]
+    pub kind: Option<String>,
+    #[schemars(description = "Minimum confidence threshold (0.0 - 1.0)")]
+    pub min_confidence: Option<f64>,
+    #[schemars(description = "Direction relative to symbol: 'incoming', 'outgoing', or 'both'")]
+    pub direction: Option<String>,
+    #[schemars(description = "Maximum results (default: 50)")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GraphStatsParams {
+    #[schemars(description = "Number of top nodes by PageRank to return (default: 20)")]
+    pub top_n: Option<usize>,
+    #[schemars(description = "Filter top-N by node kind")]
+    pub kind: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListFilesParams {
+    #[schemars(description = "Filter by language: typescript, javascript, python, rust, html, c, cpp")]
+    pub language: Option<String>,
+    #[schemars(description = "Sort by: 'path' (default), 'size', 'tokens', 'indexed_at'")]
+    pub sort_by: Option<String>,
+    #[schemars(description = "Maximum results (default: 100)")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UnresolvedRefsParams {
+    #[schemars(description = "Filter by file path (substring match)")]
+    pub file_path: Option<String>,
+    #[schemars(description = "Maximum results (default: 50)")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListSessionsParams {
+    #[schemars(description = "Maximum results (default: 20)")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ReindexParams {
+    #[schemars(description = "Specific file paths to reindex (relative to workspace root)")]
+    pub files: Option<Vec<String>>,
+    #[schemars(description = "Perform a full reindex of the entire workspace")]
+    pub full: Option<bool>,
 }
 
 #[tool_router]
@@ -149,7 +229,7 @@ impl VexpServer {
         super::tools::capsule::handle(self, params).await
     }
 
-    #[tool(description = "Get the impact graph of a symbol showing callers, callees, or dependents up to N depth. Useful for understanding blast radius of changes.")]
+    #[tool(description = "Get the impact graph of a symbol showing callers, callees, or dependents up to N depth. Useful for understanding blast radius of changes. Optionally filter by edge kinds.")]
     async fn get_impact_graph(
         &self,
         Parameters(params): Parameters<ImpactParams>,
@@ -217,6 +297,74 @@ impl VexpServer {
     ) -> Result<CallToolResult, ErrorData> {
         super::tools::observe::handle(self, params).await
     }
+
+    // -- New tools --
+
+    #[tool(description = "Search and filter code symbols (functions, classes, structs, etc.) with structured queries. Filter by name, kind, file path, visibility, or export status.")]
+    async fn query_nodes(
+        &self,
+        Parameters(params): Parameters<QueryNodesParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        super::tools::query_nodes::handle(self, params).await
+    }
+
+    #[tool(description = "Query relationships between symbols with filters. Filter by symbol, edge kind (calls/imports/implements/extends/type_ref/contains), confidence, and direction.")]
+    async fn query_edges(
+        &self,
+        Parameters(params): Parameters<QueryEdgesParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        super::tools::query_edges::handle(self, params).await
+    }
+
+    #[tool(description = "Get graph topology statistics: node/edge counts, edge kind breakdown, and top-N most central symbols by PageRank.")]
+    async fn graph_stats(
+        &self,
+        Parameters(params): Parameters<GraphStatsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        super::tools::graph_stats::handle(self, params).await
+    }
+
+    #[tool(description = "List all indexed files with metadata: path, language, size, token count, content hash, and index timestamp.")]
+    async fn list_files(
+        &self,
+        Parameters(params): Parameters<ListFilesParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        super::tools::list_files::handle(self, params).await
+    }
+
+    #[tool(description = "Show unresolved cross-file references that couldn't be linked during indexing. Useful for diagnosing graph gaps.")]
+    async fn get_unresolved_refs(
+        &self,
+        Parameters(params): Parameters<UnresolvedRefsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        super::tools::unresolved::handle(self, params).await
+    }
+
+    #[tool(description = "List all memory sessions with observation counts, timestamps, and summaries.")]
+    async fn list_sessions(
+        &self,
+        Parameters(params): Parameters<ListSessionsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        super::tools::list_sessions::handle(self, params).await
+    }
+
+    #[tool(description = "Trigger reindex from MCP. Specify file paths for incremental reindex, or set full=true for complete workspace reindex. Rebuilds the graph after indexing.")]
+    async fn trigger_reindex(
+        &self,
+        Parameters(params): Parameters<ReindexParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        super::tools::reindex::handle(self, params).await
+    }
+
+    #[tool(description = "Detect and mark stale observations whose linked files have changed. Also cleans up observations past the TTL.")]
+    async fn detect_staleness(&self) -> Result<CallToolResult, ErrorData> {
+        super::tools::staleness::handle(self).await
+    }
+
+    #[tool(description = "Show the current vexp configuration: token budget, skeleton level, exclude patterns, memory settings, and more.")]
+    async fn get_config(&self) -> Result<CallToolResult, ErrorData> {
+        super::tools::get_config::handle(self).await
+    }
 }
 
 #[tool_handler]
@@ -234,11 +382,34 @@ impl ServerHandler for VexpServer {
                 website_url: None,
             },
             instructions: Some(
-                "Vexp is a context engine that provides token-efficient code context. \
-                 Use get_context_capsule for the best results — it automatically selects \
-                 relevant files and returns them within your token budget. Use get_skeleton \
-                 for individual file summaries, get_impact_graph for dependency analysis, \
-                 and search_logic_flow to trace execution paths."
+                "Vexp is a local-first context engine for AI coding agents. It indexes \
+                 source code into a graph of symbols and relationships, then serves \
+                 token-efficient context over MCP.\n\n\
+                 ## Quick start\n\
+                 1. `workspace_setup` — detect project type, generate config\n\
+                 2. `trigger_reindex` — index the codebase (full=true for first run)\n\
+                 3. `get_context_capsule` — your primary tool: hybrid search with intent \
+                    detection, returns full pivot files + skeletonized supporting files \
+                    within a token budget\n\n\
+                 ## When to use each tool\n\
+                 - **Understand code**: `get_context_capsule` (broad), `get_skeleton` (single file), \
+                   `query_nodes` (structured symbol search)\n\
+                 - **Trace dependencies**: `get_impact_graph` (callers/callees), \
+                   `search_logic_flow` (paths between symbols), `query_edges` (filter relationships)\n\
+                 - **Inspect the index**: `index_status`, `graph_stats`, `list_files`, \
+                   `get_unresolved_refs`, `get_config`\n\
+                 - **Memory across sessions**: `save_observation`, `search_memory`, \
+                   `get_session_context`, `list_sessions`, `detect_staleness`\n\
+                 - **Maintain the index**: `trigger_reindex` (after file changes), \
+                   `submit_lsp_edges` (supplement with LSP data)\n\n\
+                 ## Tips\n\
+                 - Prefer `get_context_capsule` over reading files directly — it respects \
+                   token budgets and ranks by relevance.\n\
+                 - Use `save_observation` to persist insights; they resurface in future capsules.\n\
+                 - Use `query_nodes` with kind/visibility/exported_only filters to find specific \
+                   symbols without reading entire files.\n\
+                 - Use `get_impact_graph` with edge_kinds=['calls'] before refactoring to \
+                   understand blast radius."
                     .to_string(),
             ),
         }

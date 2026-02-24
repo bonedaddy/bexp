@@ -74,9 +74,14 @@ impl GraphEngine {
             .unwrap_or(0.0)
     }
 
-    pub fn impact_graph(&self, symbol: &str, direction: &str, depth: usize) -> Result<String> {
+    pub fn impact_graph(
+        &self,
+        symbol: &str,
+        direction: &str,
+        depth: usize,
+        edge_kinds: Option<&[String]>,
+    ) -> Result<String> {
         let graph = self.graph.read().unwrap();
-        let _id_map = self.id_to_index.read().unwrap();
 
         // Find the node
         let node_idx = graph
@@ -89,12 +94,12 @@ impl GraphEngine {
             .ok_or_else(|| VexpError::NotFound(format!("Symbol not found: {}", symbol)))?;
 
         let result = match direction {
-            "callers" => traversal::get_callers(&graph, node_idx, depth),
-            "callees" => traversal::get_callees(&graph, node_idx, depth),
+            "callers" => traversal::get_callers(&graph, node_idx, depth, edge_kinds),
+            "callees" => traversal::get_callees(&graph, node_idx, depth, edge_kinds),
             "both" => {
-                let mut result = traversal::get_callers(&graph, node_idx, depth);
+                let mut result = traversal::get_callers(&graph, node_idx, depth, edge_kinds);
                 result.push_str("\n---\n\n");
-                result.push_str(&traversal::get_callees(&graph, node_idx, depth));
+                result.push_str(&traversal::get_callees(&graph, node_idx, depth, edge_kinds));
                 result
             }
             _ => return Err(VexpError::Graph(format!("Invalid direction: {}", direction))),
@@ -159,5 +164,46 @@ impl GraphEngine {
                 node.name == name || node.qualified_name.as_deref() == Some(name)
             })
             .map(|idx| graph[idx].db_id)
+    }
+
+    pub fn get_top_pagerank(
+        &self,
+        n: usize,
+        kind_filter: Option<&str>,
+    ) -> Vec<(String, String, f64)> {
+        let graph = self.graph.read().unwrap();
+        let pr = self.pagerank.read().unwrap();
+
+        let mut entries: Vec<(String, String, f64)> = pr
+            .iter()
+            .filter_map(|(idx, &score)| {
+                let node = &graph[*idx];
+                if let Some(kind) = kind_filter {
+                    if node.kind != kind {
+                        return None;
+                    }
+                }
+                Some((
+                    node.qualified_name.clone().unwrap_or_else(|| node.name.clone()),
+                    node.kind.clone(),
+                    score,
+                ))
+            })
+            .collect();
+
+        entries.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+        entries.truncate(n);
+        entries
+    }
+
+    pub fn get_edge_kind_counts(&self) -> Vec<(String, usize)> {
+        let graph = self.graph.read().unwrap();
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for edge in graph.edge_weights() {
+            *counts.entry(edge.kind.clone()).or_insert(0) += 1;
+        }
+        let mut result: Vec<(String, usize)> = counts.into_iter().collect();
+        result.sort_by(|a, b| b.1.cmp(&a.1));
+        result
     }
 }

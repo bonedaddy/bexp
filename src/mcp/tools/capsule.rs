@@ -10,7 +10,12 @@ pub async fn handle(
 
     let result = server
         .capsule
-        .generate(&params.query, budget, params.session_id.as_deref())
+        .generate(
+            &params.query,
+            budget,
+            params.session_id.as_deref(),
+            params.intent.as_deref(),
+        )
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
     Ok(CallToolResult::success(vec![Content::text(result)]))
