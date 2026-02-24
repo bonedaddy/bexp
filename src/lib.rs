@@ -1,0 +1,13 @@
+#![allow(dead_code)]
+
+pub mod capsule;
+pub mod config;
+pub mod db;
+pub mod error;
+pub mod git;
+pub mod graph;
+pub mod indexer;
+pub mod mcp;
+pub mod memory;
+pub mod skeleton;
+pub mod types;

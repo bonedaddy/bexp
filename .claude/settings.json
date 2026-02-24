@@ -1,0 +1,66 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(cargo *)",
+      "Bash(make *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git status *)",
+      "Bash(git status)",
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "Bash(git branch *)",
+      "Bash(git rev-parse *)",
+      "Bash(git submodule *)",
+      "Bash(git push *)",
+      "Bash(gh pr diff *)",
+      "Bash(git pr create *)",
+      "Bash(git -C *)",
+      "Bash(gh *)",
+      "Bash(cd * && *)",
+      "Bash(ls *)",
+      "Bash(ls)",
+      "Bash(anchor *)",
+      "Read",
+      "Edit",
+      "Write",
+      "Grep",
+      "Glob",
+      "mcp__sequential-thinking__sequentialthinking",
+      "Task",
+      "Skill",
+      "WebFetch",
+      "WebSearch",
+      "Bash(node *)",
+      "Bash(yarn *)",
+      "Bash(npx *)",
+      "Bash(cat *)",
+      "Bash(tail *)",
+      "Bash(head *)",
+      "Bash(wc *)",
+      "Bash(python *)",
+      "Bash(mkdir *)",
+      "Bash(mkdir -p *)",
+      "Bash(sed -n *)"
+    ],
+    "deny": [
+      "Bash(git push * main)",
+      "Bash(git push * main:*)",
+      "Bash(rm -rf *)",
+      "Bash(rm -r *)",
+      "Bash(sudo *)"
+    ],
+    "defaultMode": "bypassPermissions"
+  },
+  "enabledPlugins": {
+    "playground@claude-plugins-official": true
+  },
+  "env": {
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "0"
+  }
+}

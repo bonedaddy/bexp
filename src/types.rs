@@ -1,0 +1,255 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeKind {
+    Function,
+    Method,
+    Class,
+    Struct,
+    Interface,
+    Enum,
+    EnumVariant,
+    TypeAlias,
+    Trait,
+    Impl,
+    Module,
+    Variable,
+    Constant,
+    Import,
+}
+
+impl NodeKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Function => "function",
+            Self::Method => "method",
+            Self::Class => "class",
+            Self::Struct => "struct",
+            Self::Interface => "interface",
+            Self::Enum => "enum",
+            Self::EnumVariant => "enum_variant",
+            Self::TypeAlias => "type_alias",
+            Self::Trait => "trait",
+            Self::Impl => "impl",
+            Self::Module => "module",
+            Self::Variable => "variable",
+            Self::Constant => "constant",
+            Self::Import => "import",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "function" => Some(Self::Function),
+            "method" => Some(Self::Method),
+            "class" => Some(Self::Class),
+            "struct" => Some(Self::Struct),
+            "interface" => Some(Self::Interface),
+            "enum" => Some(Self::Enum),
+            "enum_variant" => Some(Self::EnumVariant),
+            "type_alias" => Some(Self::TypeAlias),
+            "trait" => Some(Self::Trait),
+            "impl" => Some(Self::Impl),
+            "module" => Some(Self::Module),
+            "variable" => Some(Self::Variable),
+            "constant" => Some(Self::Constant),
+            "import" => Some(Self::Import),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EdgeKind {
+    Calls,
+    Imports,
+    Implements,
+    Extends,
+    TypeRef,
+    Contains,
+}
+
+impl EdgeKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Calls => "calls",
+            Self::Imports => "imports",
+            Self::Implements => "implements",
+            Self::Extends => "extends",
+            Self::TypeRef => "type_ref",
+            Self::Contains => "contains",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "calls" => Some(Self::Calls),
+            "imports" => Some(Self::Imports),
+            "implements" => Some(Self::Implements),
+            "extends" => Some(Self::Extends),
+            "type_ref" => Some(Self::TypeRef),
+            "contains" => Some(Self::Contains),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DetailLevel {
+    Minimal,
+    Standard,
+    Detailed,
+}
+
+impl DetailLevel {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Minimal => "minimal",
+            Self::Standard => "standard",
+            Self::Detailed => "detailed",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "minimal" => Some(Self::Minimal),
+            "standard" => Some(Self::Standard),
+            "detailed" => Some(Self::Detailed),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Intent {
+    Debug,
+    BlastRadius,
+    Modify,
+    Explore,
+}
+
+impl Intent {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Debug => "debug",
+            Self::BlastRadius => "blast_radius",
+            Self::Modify => "modify",
+            Self::Explore => "explore",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Language {
+    TypeScript,
+    JavaScript,
+    Python,
+    Rust,
+    Html,
+    C,
+    Cpp,
+}
+
+impl Language {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::TypeScript => "typescript",
+            Self::JavaScript => "javascript",
+            Self::Python => "python",
+            Self::Rust => "rust",
+            Self::Html => "html",
+            Self::C => "c",
+            Self::Cpp => "cpp",
+        }
+    }
+
+    pub fn from_extension(ext: &str) -> Option<Self> {
+        match ext {
+            "ts" | "tsx" => Some(Self::TypeScript),
+            "js" | "jsx" | "mjs" | "cjs" => Some(Self::JavaScript),
+            "py" | "pyi" => Some(Self::Python),
+            "rs" => Some(Self::Rust),
+            "html" | "htm" => Some(Self::Html),
+            "c" | "h" => Some(Self::C),
+            "cpp" | "cxx" | "cc" | "hpp" | "hxx" => Some(Self::Cpp),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn language_from_extension_supports_known_aliases() {
+        assert_eq!(Language::from_extension("ts"), Some(Language::TypeScript));
+        assert_eq!(Language::from_extension("jsx"), Some(Language::JavaScript));
+        assert_eq!(Language::from_extension("pyi"), Some(Language::Python));
+        assert_eq!(Language::from_extension("rs"), Some(Language::Rust));
+        assert_eq!(Language::from_extension("htm"), Some(Language::Html));
+        assert_eq!(Language::from_extension("h"), Some(Language::C));
+        assert_eq!(Language::from_extension("hpp"), Some(Language::Cpp));
+        assert_eq!(Language::from_extension("txt"), None);
+    }
+
+    #[test]
+    fn node_kind_roundtrips_through_string_representation() {
+        let all = [
+            NodeKind::Function,
+            NodeKind::Method,
+            NodeKind::Class,
+            NodeKind::Struct,
+            NodeKind::Interface,
+            NodeKind::Enum,
+            NodeKind::EnumVariant,
+            NodeKind::TypeAlias,
+            NodeKind::Trait,
+            NodeKind::Impl,
+            NodeKind::Module,
+            NodeKind::Variable,
+            NodeKind::Constant,
+            NodeKind::Import,
+        ];
+
+        for kind in all {
+            assert_eq!(NodeKind::from_str(kind.as_str()), Some(kind));
+        }
+
+        assert_eq!(NodeKind::from_str("not_a_kind"), None);
+    }
+
+    #[test]
+    fn edge_kind_roundtrips_through_string_representation() {
+        let all = [
+            EdgeKind::Calls,
+            EdgeKind::Imports,
+            EdgeKind::Implements,
+            EdgeKind::Extends,
+            EdgeKind::TypeRef,
+            EdgeKind::Contains,
+        ];
+
+        for kind in all {
+            assert_eq!(EdgeKind::from_str(kind.as_str()), Some(kind));
+        }
+
+        assert_eq!(EdgeKind::from_str("not_an_edge"), None);
+    }
+
+    #[test]
+    fn detail_level_roundtrips_through_string_representation() {
+        let all = [DetailLevel::Minimal, DetailLevel::Standard, DetailLevel::Detailed];
+
+        for level in all {
+            assert_eq!(DetailLevel::from_str(level.as_str()), Some(level));
+        }
+
+        assert_eq!(DetailLevel::from_str("unknown"), None);
+    }
+}
