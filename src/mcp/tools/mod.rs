@@ -18,6 +18,8 @@ pub mod staleness;
 pub mod status;
 pub mod unresolved;
 
+use std::path::{Component, Path, PathBuf};
+
 use rmcp::model::{CallToolResult, Content};
 
 use crate::indexer::IndexerService;
@@ -38,4 +40,59 @@ pub async fn wait_for_index(indexer: &IndexerService) -> Option<CallToolResult> 
         )]));
     }
     None
+}
+
+/// Validate user-supplied path stays within workspace.
+/// Returns canonical absolute path or ErrorData.
+pub fn validate_workspace_path(
+    workspace_root: &Path,
+    user_path: &str,
+) -> std::result::Result<PathBuf, rmcp::model::ErrorData> {
+    let joined = workspace_root.join(user_path);
+    let canonical_root = workspace_root.canonicalize().map_err(|e| {
+        rmcp::model::ErrorData::internal_error(
+            format!("Cannot canonicalize workspace root: {e}"),
+            None,
+        )
+    })?;
+    match joined.canonicalize() {
+        Ok(canonical) => {
+            if !canonical.starts_with(&canonical_root) {
+                return Err(rmcp::model::ErrorData::invalid_params(
+                    format!("Path '{}' resolves outside the workspace", user_path),
+                    None,
+                ));
+            }
+            Ok(canonical)
+        }
+        Err(_) => {
+            // File doesn't exist — lexical normalization fallback
+            let normalized = normalize_path(&joined);
+            if !normalized.starts_with(&canonical_root) {
+                return Err(rmcp::model::ErrorData::invalid_params(
+                    format!("Path '{}' resolves outside the workspace", user_path),
+                    None,
+                ));
+            }
+            Ok(normalized)
+        }
+    }
+}
+
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut components = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                if matches!(components.last(), Some(Component::Normal(_))) {
+                    components.pop();
+                } else {
+                    components.push(component);
+                }
+            }
+            Component::CurDir => {}
+            _ => components.push(component),
+        }
+    }
+    components.iter().collect()
 }

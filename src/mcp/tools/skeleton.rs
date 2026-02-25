@@ -17,7 +17,7 @@ pub async fn handle(
         .and_then(DetailLevel::parse)
         .unwrap_or(server.config.default_skeleton_level);
 
-    let file_path = server.workspace_root.join(&params.file_path);
+    let file_path = super::validate_workspace_path(&server.workspace_root, &params.file_path)?;
 
     let result = server
         .skeletonizer
