@@ -24,9 +24,11 @@ pub enum VexpError {
     Skeleton(String),
 
     #[error("Capsule error: {0}")]
+    #[allow(dead_code)]
     Capsule(String),
 
     #[error("Memory error: {0}")]
+    #[allow(dead_code)]
     Memory(String),
 
     #[error("Serialization error: {0}")]
@@ -42,6 +44,7 @@ pub enum VexpError {
     NotFound(String),
 
     #[error("Token budget exceeded: requested {requested}, max {max}")]
+    #[allow(dead_code)]
     BudgetExceeded { requested: usize, max: usize },
 }
 

@@ -7,6 +7,10 @@ pub async fn handle(
     server: &VexpServer,
     params: SkeletonParams,
 ) -> Result<CallToolResult, ErrorData> {
+    if let Some(result) = super::wait_for_index(&server.indexer).await {
+        return Ok(result);
+    }
+
     let level = params
         .level
         .as_deref()

@@ -5,6 +5,7 @@ use rusqlite::Connection;
 
 use crate::error::Result;
 use crate::db::queries;
+use crate::types::{EdgeKind, NodeKind};
 
 use super::{GraphEdge, GraphNode};
 
@@ -21,7 +22,7 @@ pub fn build_graph(
             db_id: node.id,
             name: node.name.clone(),
             qualified_name: node.qualified_name.clone(),
-            kind: node.kind.clone(),
+            kind: NodeKind::parse(&node.kind).unwrap_or(NodeKind::External),
             file_id: node.file_id,
         });
         id_map.insert(node.id, idx);
@@ -38,7 +39,7 @@ pub fn build_graph(
                 src,
                 tgt,
                 GraphEdge {
-                    kind: edge.kind.clone(),
+                    kind: EdgeKind::parse(&edge.kind).unwrap_or(EdgeKind::Calls),
                     confidence: edge.confidence,
                 },
             );
@@ -110,7 +111,7 @@ fn load_cross_workspace_edges(
                 db_id: synthetic_id_counter,
                 name,
                 qualified_name: Some(target_qname.clone()),
-                kind: "external".to_string(),
+                kind: NodeKind::External,
                 file_id: -1,
             });
             id_map.insert(synthetic_id_counter, idx);
@@ -118,7 +119,10 @@ fn load_cross_workspace_edges(
             idx
         });
 
-        graph.add_edge(src_idx, tgt_idx, GraphEdge { kind, confidence });
+        graph.add_edge(src_idx, tgt_idx, GraphEdge {
+            kind: EdgeKind::parse(&kind).unwrap_or(EdgeKind::Calls),
+            confidence,
+        });
         count += 1;
     }
 

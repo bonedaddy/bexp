@@ -11,8 +11,8 @@
 pub fn tokenize_identifier(name: &str) -> String {
     let mut parts: Vec<String> = Vec::new();
 
-    // Split on :: and . first (qualified name separators)
-    for segment in name.split([':', '.']) {
+    // Split on common separators: qualified name (::, .), hyphen, slash
+    for segment in name.split([':', '.', '-', '/']) {
         if segment.is_empty() {
             continue;
         }
@@ -80,10 +80,20 @@ fn split_camel_case(s: &str, out: &mut Vec<String>) {
 }
 
 /// Tokenize a search query so FTS5 can match against tokenized columns.
+/// Also strips FTS5 special characters (-, :, *, ", ^) to prevent query injection.
 pub fn tokenize_query(query: &str) -> String {
     query
         .split_whitespace()
-        .map(tokenize_identifier)
+        .map(|w| {
+            let tokenized = tokenize_identifier(w);
+            // Strip FTS5 special characters from the tokenized result
+            // to prevent query syntax injection (hyphens, colons, quotes, etc.)
+            tokenized
+                .chars()
+                .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '_')
+                .collect::<String>()
+        })
+        .filter(|w| !w.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
 }

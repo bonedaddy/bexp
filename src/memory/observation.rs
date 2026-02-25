@@ -3,6 +3,7 @@ use rusqlite::{params, Connection};
 use crate::error::Result;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Observation {
     pub id: i64,
     pub session_id: String,

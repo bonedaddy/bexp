@@ -6,6 +6,10 @@ pub async fn handle(
     server: &VexpServer,
     params: GraphStatsParams,
 ) -> Result<CallToolResult, ErrorData> {
+    if let Some(result) = super::wait_for_index(&server.indexer).await {
+        return Ok(result);
+    }
+
     let top_n = params.top_n.unwrap_or(20);
 
     let node_count = server.graph.node_count();

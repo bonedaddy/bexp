@@ -6,6 +6,10 @@ pub async fn handle(
     server: &VexpServer,
     params: FlowParams,
 ) -> Result<CallToolResult, ErrorData> {
+    if let Some(result) = super::wait_for_index(&server.indexer).await {
+        return Ok(result);
+    }
+
     let max_depth = params.max_depth.unwrap_or(5);
 
     let result = server

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
 use std::str::FromStr;
@@ -31,6 +31,8 @@ pub struct LspClient {
     _reader_thread: Option<JoinHandle<()>>,
     opened_files: HashSet<String>,
     last_response_at: Arc<Mutex<Instant>>,
+    /// Buffer for out-of-order responses received while waiting for a specific request ID.
+    pending_responses: HashMap<i64, Option<Value>>,
 }
 
 #[derive(Serialize)]
@@ -87,6 +89,7 @@ impl LspClient {
             _reader_thread: Some(reader_thread),
             opened_files: HashSet::new(),
             last_response_at,
+            pending_responses: HashMap::new(),
         })
     }
 
@@ -163,7 +166,13 @@ impl LspClient {
             return Ok(());
         }
 
-        let content = std::fs::read_to_string(file_path).unwrap_or_default();
+        let content = match std::fs::read_to_string(file_path) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("Failed to read {} for didOpen: {}", file_path, e);
+                return Ok(());
+            }
+        };
         let language_id = detect_language_id(file_path);
 
         let uri = Uri::from_str(&format!("file://{}", file_path))
@@ -300,6 +309,11 @@ impl LspClient {
     }
 
     fn read_response(&mut self, expected_id: i64) -> anyhow::Result<Option<Value>> {
+        // Check buffer first for previously-received out-of-order responses
+        if let Some(result) = self.pending_responses.remove(&expected_id) {
+            return Ok(result);
+        }
+
         let deadline = Instant::now() + RESPONSE_TIMEOUT;
 
         loop {
@@ -320,7 +334,10 @@ impl LspClient {
                     if msg.id == Some(expected_id) {
                         return Ok(msg.result);
                     }
-                    // Otherwise it's a notification or different request — skip
+                    // Buffer non-matching responses (skip notifications which have no id)
+                    if let Some(id) = msg.id {
+                        self.pending_responses.insert(id, msg.result);
+                    }
                 }
                 Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
                     return Err(anyhow::anyhow!(

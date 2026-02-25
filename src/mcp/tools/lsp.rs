@@ -8,6 +8,10 @@ pub async fn handle(
     server: &VexpServer,
     params: LspEdgesParams,
 ) -> Result<CallToolResult, ErrorData> {
+    if let Some(result) = super::wait_for_index(&server.indexer).await {
+        return Ok(result);
+    }
+
     let mut added = 0;
     let mut skipped = 0;
 

@@ -87,6 +87,77 @@ impl IndexerService {
         Ok(format!("{:016x}", hash))
     }
 
+    /// Write an extracted file's nodes, edges, and unresolved refs into the database.
+    /// Returns (node_count, edge_count) inserted. The caller must have started a
+    /// transaction if atomicity across multiple files is needed.
+    fn write_extracted_file(
+        conn: &rusqlite::Connection,
+        file_id: i64,
+        extracted: &ExtractedFile,
+    ) -> Result<(usize, usize)> {
+        let mut node_count = 0;
+        let mut edge_count = 0;
+
+        let mut node_id_map = std::collections::HashMap::new();
+        for (idx, node) in extracted.nodes.iter().enumerate() {
+            let metadata_json = node
+                .metadata
+                .as_ref()
+                .map(|m| serde_json::to_string(m).unwrap_or_default());
+            let node_id = queries::insert_node(
+                conn,
+                file_id,
+                node.kind.as_str(),
+                &node.name,
+                node.qualified_name.as_deref(),
+                node.signature.as_deref(),
+                node.docstring.as_deref(),
+                node.line_start as i64,
+                node.line_end as i64,
+                node.col_start as i64,
+                node.col_end as i64,
+                node.visibility.as_deref(),
+                node.is_export,
+                metadata_json.as_deref(),
+            )?;
+            node_id_map.insert(idx, node_id);
+            node_count += 1;
+        }
+
+        for edge in &extracted.edges {
+            if let (Some(&src), Some(&tgt)) = (
+                node_id_map.get(&edge.source_idx),
+                node_id_map.get(&edge.target_idx),
+            ) {
+                queries::insert_edge(
+                    conn,
+                    src,
+                    tgt,
+                    edge.kind.as_str(),
+                    edge.confidence,
+                    edge.context.as_deref(),
+                )?;
+                edge_count += 1;
+            }
+        }
+
+        for uref in &extracted.unresolved_refs {
+            if let Some(&src) = node_id_map.get(&uref.source_idx) {
+                queries::insert_unresolved_ref(
+                    conn,
+                    src,
+                    &uref.target_name,
+                    uref.target_qualified_name.as_deref(),
+                    uref.edge_kind.as_str(),
+                    uref.import_path.as_deref(),
+                    uref.context.as_deref(),
+                )?;
+            }
+        }
+
+        Ok((node_count, edge_count))
+    }
+
     pub fn full_index(&self) -> Result<IndexReport> {
         // Compute filesystem mtime hash and compare with stored value
         let fs_hash = self.compute_filesystem_mtime_hash()?;
@@ -94,15 +165,14 @@ impl IndexerService {
             let reader = self.db.reader();
             if let Ok(Some(stored_hash)) = queries::get_metadata(&reader, "files_mtime_hash") {
                 if stored_hash == fs_hash {
-                    let stats = queries::get_index_stats(&reader)?;
                     tracing::info!(
                         "Skipping full index: filesystem unchanged (hash: {})",
                         &fs_hash[..8]
                     );
                     return Ok(IndexReport {
-                        file_count: stats.file_count as usize,
-                        node_count: stats.node_count as usize,
-                        edge_count: stats.edge_count as usize,
+                        file_count: 0,
+                        node_count: 0,
+                        edge_count: 0,
                         changed_file_ids: Vec::new(),
                     });
                 }
@@ -114,12 +184,36 @@ impl IndexerService {
 
         tracing::info!("Scanning found {} files to index", files.len());
 
-        // Parallel parse
+        // Load stored mtimes for per-file skip
+        let stored_mtimes = {
+            let reader = self.db.reader();
+            queries::get_all_file_mtimes(&reader).unwrap_or_default()
+        };
+
+        // Parallel parse — skip files whose mtime hasn't changed
         let extracted: Vec<(PathBuf, ExtractedFile)> = files
             .par_iter()
             .filter_map(|path| {
                 let ext = path.extension()?.to_str()?;
                 let lang = Language::from_extension(ext)?;
+
+                // Per-file mtime check: skip unchanged files
+                let rel_path = path
+                    .strip_prefix(&self.workspace_root)
+                    .unwrap_or(path)
+                    .to_string_lossy();
+                let current_mtime = std::fs::metadata(path)
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_nanos() as i64)
+                    .unwrap_or(0);
+                if let Some(&stored_mtime) = stored_mtimes.get(rel_path.as_ref()) {
+                    if stored_mtime == current_mtime {
+                        return None; // unchanged, skip
+                    }
+                }
+
                 match self.parse_file(path, lang) {
                     Ok(extracted) => Some((path.clone(), extracted)),
                     Err(e) => {
@@ -130,92 +224,46 @@ impl IndexerService {
             })
             .collect();
 
-        tracing::info!("Parsed {} files, writing to database", extracted.len());
+        tracing::info!(
+            "Parsed {} changed files (of {} total), writing to database",
+            extracted.len(),
+            files.len()
+        );
 
-        // Sequential batch write
-        let conn = self.db.writer();
-        let tx = conn.execute_batch("BEGIN TRANSACTION")
-            .map_err(VexpError::Database);
-        if let Err(e) = tx {
-            tracing::error!("Failed to begin transaction: {}", e);
-            return Err(e);
-        }
-
+        // Sequential batch write — use rusqlite Transaction for automatic rollback on error
         let mut file_count = 0;
         let mut node_count = 0;
         let mut edge_count = 0;
+        let mut changed_file_ids = Vec::new();
 
-        for (path, extracted) in &extracted {
-            let rel_path = path
-                .strip_prefix(&self.workspace_root)
-                .unwrap_or(path)
-                .to_string_lossy();
+        {
+            let mut conn = self.db.writer();
+            let tx = conn.transaction().map_err(VexpError::Database)?;
 
-            let file_id = queries::insert_file(
-                &conn,
-                &rel_path,
-                extracted.language.as_str(),
-                &extracted.content_hash,
-                extracted.mtime_ns,
-                extracted.size_bytes as i64,
-            )?;
-            file_count += 1;
+            for (path, extracted) in &extracted {
+                let rel_path = path
+                    .strip_prefix(&self.workspace_root)
+                    .unwrap_or(path)
+                    .to_string_lossy();
 
-            // Insert nodes
-            let mut node_id_map = std::collections::HashMap::new();
-            for (idx, node) in extracted.nodes.iter().enumerate() {
-                let metadata_json = node.metadata.as_ref().map(|m| {
-                    serde_json::to_string(m).unwrap_or_default()
-                });
-                let node_id = queries::insert_node(
-                    &conn,
-                    file_id,
-                    node.kind.as_str(),
-                    &node.name,
-                    node.qualified_name.as_deref(),
-                    node.signature.as_deref(),
-                    node.docstring.as_deref(),
-                    node.line_start as i64,
-                    node.line_end as i64,
-                    node.col_start as i64,
-                    node.col_end as i64,
-                    node.visibility.as_deref(),
-                    node.is_export,
-                    metadata_json.as_deref(),
+                let file_id = queries::insert_file(
+                    &tx,
+                    &rel_path,
+                    extracted.language.as_str(),
+                    &extracted.content_hash,
+                    extracted.mtime_ns,
+                    extracted.size_bytes as i64,
                 )?;
-                node_id_map.insert(idx, node_id);
-                node_count += 1;
+                file_count += 1;
+                changed_file_ids.push(file_id);
+
+                let (nc, ec) = Self::write_extracted_file(&tx, file_id, extracted)?;
+                node_count += nc;
+                edge_count += ec;
             }
 
-            // Insert intra-file edges
-            for edge in &extracted.edges {
-                if let (Some(&src), Some(&tgt)) =
-                    (node_id_map.get(&edge.source_idx), node_id_map.get(&edge.target_idx))
-                {
-                    queries::insert_edge(&conn, src, tgt, edge.kind.as_str(), edge.confidence, edge.context.as_deref())?;
-                    edge_count += 1;
-                }
-            }
-
-            // Insert unresolved references
-            for uref in &extracted.unresolved_refs {
-                if let Some(&src) = node_id_map.get(&uref.source_idx) {
-                    queries::insert_unresolved_ref(
-                        &conn,
-                        src,
-                        &uref.target_name,
-                        uref.target_qualified_name.as_deref(),
-                        uref.edge_kind.as_str(),
-                        uref.import_path.as_deref(),
-                        uref.context.as_deref(),
-                    )?;
-                }
-            }
+            tx.commit().map_err(VexpError::Database)?;
         }
-
-        conn.execute_batch("COMMIT")
-            .map_err(VexpError::Database)?;
-        drop(conn);
 
         // Resolve cross-file references
         let resolved = self.resolve_references()?;
@@ -238,7 +286,7 @@ impl IndexerService {
             file_count,
             node_count,
             edge_count,
-            changed_file_ids: Vec::new(), // Full index doesn't track individual IDs
+            changed_file_ids,
         })
     }
 
@@ -247,6 +295,18 @@ impl IndexerService {
         let mut node_count = 0;
         let mut edge_count = 0;
         let mut changed_file_ids = Vec::new();
+
+        // Phase 1: Parse — check mtimes (reader), parse changed files, collect deletions
+        struct Deletion {
+            rel_path: String,
+        }
+        struct ParsedFile {
+            rel_path: String,
+            extracted: ExtractedFile,
+        }
+
+        let mut deletions = Vec::new();
+        let mut parsed_files = Vec::new();
 
         for path in changed_paths {
             let rel_path = path
@@ -257,10 +317,7 @@ impl IndexerService {
 
             // Check if file still exists
             if !path.exists() {
-                let conn = self.db.writer();
-                if let Ok(Some(file)) = queries::get_file_by_path(&conn, &rel_path) {
-                    queries::delete_file_data(&conn, file.id)?;
-                }
+                deletions.push(Deletion { rel_path });
                 continue;
             }
 
@@ -294,83 +351,49 @@ impl IndexerService {
             // Re-parse
             match self.parse_file(path, lang) {
                 Ok(extracted) => {
-                    let conn = self.db.writer();
-
-                    // Delete old data
-                    if let Ok(Some(old)) = queries::get_file_by_path(&conn, &rel_path) {
-                        queries::delete_file_data(&conn, old.id)?;
-                    }
-
-                    let file_id = queries::insert_file(
-                        &conn,
-                        &rel_path,
-                        extracted.language.as_str(),
-                        &extracted.content_hash,
-                        extracted.mtime_ns,
-                        extracted.size_bytes as i64,
-                    )?;
-                    file_count += 1;
-                    changed_file_ids.push(file_id);
-
-                    let mut node_id_map = std::collections::HashMap::new();
-                    for (idx, node) in extracted.nodes.iter().enumerate() {
-                        let metadata_json = node.metadata.as_ref().map(|m| {
-                            serde_json::to_string(m).unwrap_or_default()
-                        });
-                        let node_id = queries::insert_node(
-                            &conn,
-                            file_id,
-                            node.kind.as_str(),
-                            &node.name,
-                            node.qualified_name.as_deref(),
-                            node.signature.as_deref(),
-                            node.docstring.as_deref(),
-                            node.line_start as i64,
-                            node.line_end as i64,
-                            node.col_start as i64,
-                            node.col_end as i64,
-                            node.visibility.as_deref(),
-                            node.is_export,
-                            metadata_json.as_deref(),
-                        )?;
-                        node_id_map.insert(idx, node_id);
-                        node_count += 1;
-                    }
-
-                    for edge in &extracted.edges {
-                        if let (Some(&src), Some(&tgt)) =
-                            (node_id_map.get(&edge.source_idx), node_id_map.get(&edge.target_idx))
-                        {
-                            queries::insert_edge(
-                                &conn,
-                                src,
-                                tgt,
-                                edge.kind.as_str(),
-                                edge.confidence,
-                                edge.context.as_deref(),
-                            )?;
-                            edge_count += 1;
-                        }
-                    }
-
-                    for uref in &extracted.unresolved_refs {
-                        if let Some(&src) = node_id_map.get(&uref.source_idx) {
-                            queries::insert_unresolved_ref(
-                                &conn,
-                                src,
-                                &uref.target_name,
-                                uref.target_qualified_name.as_deref(),
-                                uref.edge_kind.as_str(),
-                                uref.import_path.as_deref(),
-                                uref.context.as_deref(),
-                            )?;
-                        }
-                    }
+                    parsed_files.push(ParsedFile { rel_path, extracted });
                 }
                 Err(e) => {
                     tracing::warn!("Failed to re-parse {}: {}", path.display(), e);
                 }
             }
+        }
+
+        // Phase 2: Write — single transaction for all deletions and inserts
+        // Uses rusqlite Transaction for automatic rollback on error.
+        if !deletions.is_empty() || !parsed_files.is_empty() {
+            let mut conn = self.db.writer();
+            let tx = conn.transaction().map_err(VexpError::Database)?;
+
+            for del in &deletions {
+                if let Ok(Some(file)) = queries::get_file_by_path(&tx, &del.rel_path) {
+                    queries::delete_file_data(&tx, file.id)?;
+                }
+            }
+
+            for pf in &parsed_files {
+                // Delete old data
+                if let Ok(Some(old)) = queries::get_file_by_path(&tx, &pf.rel_path) {
+                    queries::delete_file_data(&tx, old.id)?;
+                }
+
+                let file_id = queries::insert_file(
+                    &tx,
+                    &pf.rel_path,
+                    pf.extracted.language.as_str(),
+                    &pf.extracted.content_hash,
+                    pf.extracted.mtime_ns,
+                    pf.extracted.size_bytes as i64,
+                )?;
+                file_count += 1;
+                changed_file_ids.push(file_id);
+
+                let (nc, ec) = Self::write_extracted_file(&tx, file_id, &pf.extracted)?;
+                node_count += nc;
+                edge_count += ec;
+            }
+
+            tx.commit().map_err(VexpError::Database)?;
         }
 
         let resolved = self.resolve_references()?;
@@ -499,7 +522,7 @@ mod tests {
 
         // Second index should skip (same files, same mtimes)
         let report2 = indexer.full_index().unwrap();
-        assert_eq!(report2.file_count, 1); // Cached count
+        assert_eq!(report2.file_count, 0); // No files processed
         assert_eq!(report2.changed_file_ids.len(), 0); // No actual reindex
     }
 

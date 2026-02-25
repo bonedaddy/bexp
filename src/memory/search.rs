@@ -4,6 +4,7 @@ use crate::error::Result;
 use crate::graph::GraphEngine;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct MemorySearchResult {
     pub observation_id: i64,
     pub content: String,
@@ -22,9 +23,16 @@ pub fn search_observations(
     limit: usize,
     session_id: Option<&str>,
 ) -> Result<Vec<MemorySearchResult>> {
-    // Sanitize query for FTS5
+    // Sanitize query for FTS5: strip special characters that FTS5 interprets
+    // as operators (hyphens, colons, quotes, etc.) to prevent parse errors.
     let fts_query = query
         .split_whitespace()
+        .filter(|w| w.len() > 1)
+        .map(|w| {
+            w.chars()
+                .filter(|c| c.is_alphanumeric() || *c == '_')
+                .collect::<String>()
+        })
         .filter(|w| w.len() > 1)
         .collect::<Vec<_>>()
         .join(" OR ");
@@ -33,11 +41,12 @@ pub fn search_observations(
         return Ok(Vec::new());
     }
 
-    // FTS5 search
+    // FTS5 search (includes session_id to avoid N+1 queries for session bonus)
     let mut stmt = conn.prepare(
         "SELECT o.id, o.content, o.headline, o.summary, o.created_at, o.is_stale,
                 observations_fts.rank,
-                julianday('now') - julianday(o.created_at) as age_days
+                julianday('now') - julianday(o.created_at) as age_days,
+                o.session_id
          FROM observations_fts
          JOIN observations o ON o.id = observations_fts.rowid
          WHERE observations_fts MATCH ?1
@@ -45,7 +54,7 @@ pub fn search_observations(
          LIMIT ?2",
     )?;
 
-    type ObservationRow = (i64, String, Option<String>, Option<String>, String, bool, f64, f64);
+    type ObservationRow = (i64, String, Option<String>, Option<String>, String, bool, f64, f64, String);
     let raw_results: Vec<ObservationRow> = stmt
         .query_map(params![fts_query, (limit * 3) as i64], |row| {
             Ok((
@@ -57,6 +66,7 @@ pub fn search_observations(
                 row.get::<_, i32>(5)? != 0,
                 row.get(6)?,
                 row.get(7)?,
+                row.get(8)?,
             ))
         })?
         .filter_map(|r| r.ok())
@@ -73,7 +83,7 @@ pub fn search_observations(
 
     let mut results: Vec<MemorySearchResult> = Vec::new();
 
-    for (id, content, headline, summary, created_at, is_stale, bm25_raw, age_days) in &raw_results {
+    for (id, content, headline, summary, created_at, is_stale, bm25_raw, age_days, obs_session_id) in &raw_results {
         // Normalized BM25
         let bm25_norm = if max_bm25 > 0.0 {
             bm25_raw.abs() / max_bm25
@@ -87,16 +97,9 @@ pub fn search_observations(
         // Graph proximity: check if observation is linked to nodes relevant to query
         let graph_score = compute_graph_proximity(conn, graph, *id, query);
 
-        // Session bonus: boost if same session
+        // Session bonus: boost if same session (uses session_id from the FTS JOIN)
         let session_bonus = if let Some(sid) = session_id {
-            let obs_session: Option<String> = conn
-                .query_row(
-                    "SELECT session_id FROM observations WHERE id = ?1",
-                    params![id],
-                    |row| row.get(0),
-                )
-                .ok();
-            if obs_session.as_deref() == Some(sid) {
+            if obs_session_id == sid {
                 0.2
             } else {
                 0.0

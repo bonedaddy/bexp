@@ -4,6 +4,10 @@ use crate::memory::observation;
 use crate::mcp::server::VexpServer;
 
 pub async fn handle(server: &VexpServer) -> Result<CallToolResult, ErrorData> {
+    if let Some(result) = super::wait_for_index(&server.indexer).await {
+        return Ok(result);
+    }
+
     let conn = server.db.writer();
 
     let stale_count = observation::detect_staleness(&conn)

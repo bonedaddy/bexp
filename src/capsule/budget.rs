@@ -23,6 +23,7 @@ pub struct BudgetAllocation {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct PivotExcerpt {
     pub file_id: i64,
     pub path: String,
@@ -36,6 +37,7 @@ pub struct PivotExcerpt {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct BridgeExcerpt {
     pub file_id: i64,
     pub path: String,
@@ -45,6 +47,7 @@ pub struct BridgeExcerpt {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct SkeletonFile {
     pub file_id: i64,
     pub path: String,

@@ -148,10 +148,12 @@ fn extract_from_node(
             // Process the exported declaration
             for i in 0..node.child_count() {
                 if let Some(child) = node.child(i as u32) {
+                    let before_len = nodes.len();
                     extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, parent_idx);
-                    // Mark last added node as export
-                    if !nodes.is_empty() {
-                        nodes.last_mut().unwrap().is_export = true;
+                    // Mark the first newly-added node (the declaration itself) as exported,
+                    // not the last (which could be a child method/member).
+                    if nodes.len() > before_len {
+                        nodes[before_len].is_export = true;
                     }
                 }
             }

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use rusqlite::{params, Connection};
 
-use crate::db::queries::{self, CandidateNode, ImportTarget};
+use crate::db::queries::{self, CandidateNode};
 use crate::error::Result;
 
 /// Minimum confidence threshold to accept a resolution.
@@ -10,6 +10,7 @@ const MIN_ACCEPTANCE_CONFIDENCE: f64 = 0.30;
 
 /// Resolve unresolved cross-file references by matching target names
 /// against known nodes with scope-aware and type-aware disambiguation.
+/// Uses batch-loaded data to avoid N per-ref queries.
 /// Returns the number of edges created.
 pub fn resolve_cross_file_refs(conn: &Connection) -> Result<usize> {
     let mut count = 0;
@@ -39,6 +40,31 @@ pub fn resolve_cross_file_refs(conn: &Connection) -> Result<usize> {
         .filter_map(|r| r.ok())
         .collect();
 
+    if refs.is_empty() {
+        return Ok(0);
+    }
+
+    // Batch-load all exported/pub nodes, indexed by name and qualified name
+    let all_exported = queries::get_all_exported_nodes(conn)?;
+    let mut candidates_by_name: HashMap<&str, Vec<&CandidateNode>> = HashMap::new();
+    let mut qname_to_id: HashMap<&str, i64> = HashMap::new();
+    for node in &all_exported {
+        candidates_by_name.entry(&node.name).or_default().push(node);
+        if let Some(ref qn) = node.qualified_name {
+            qname_to_id.insert(qn.as_str(), node.id);
+        }
+    }
+
+    // Batch-load all import edges, indexed by source file ID
+    let all_imports = queries::get_all_import_edges(conn)?;
+    let mut imports_by_file: HashMap<i64, Vec<&queries::ImportEdgeRecord>> = HashMap::new();
+    for imp in &all_imports {
+        imports_by_file.entry(imp.source_file_id).or_default().push(imp);
+    }
+
+    // Batch-load all file paths for import-path matching
+    let file_paths = queries::get_all_file_paths(conn)?;
+
     let mut insert_stmt = conn.prepare(
         "INSERT INTO edges (source_node_id, target_node_id, kind, confidence, context)
          VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -46,13 +72,10 @@ pub fn resolve_cross_file_refs(conn: &Connection) -> Result<usize> {
 
     let mut delete_stmt = conn.prepare("DELETE FROM unresolved_refs WHERE id = ?1")?;
 
-    // Cache import targets per source file to avoid repeated queries
-    let mut import_cache: HashMap<i64, Vec<ImportTarget>> = HashMap::new();
-
     for (ref_id, source_id, target_name, target_qname, edge_kind, context, import_path, source_file_id) in &refs {
         // Strategy 1: Qualified name match (confidence 0.95)
         if let Some(qname) = target_qname {
-            if let Some(tid) = find_node_by_qualified_name(conn, qname) {
+            if let Some(&tid) = qname_to_id.get(qname.as_str()) {
                 insert_stmt.execute(params![source_id, tid, edge_kind, 0.95, context])?;
                 delete_stmt.execute(params![ref_id])?;
                 count += 1;
@@ -60,27 +83,36 @@ pub fn resolve_cross_file_refs(conn: &Connection) -> Result<usize> {
             }
         }
 
-        // Get all candidates matching by name
-        let candidates = queries::find_candidate_nodes_by_name(conn, target_name, *source_file_id)?;
+        // Get all candidates matching by name, excluding same-file nodes
+        let candidates: Vec<&&CandidateNode> = match candidates_by_name.get(target_name.as_str()) {
+            Some(cs) => cs.iter().filter(|c| c.file_id != *source_file_id).collect(),
+            None => continue,
+        };
 
         if candidates.is_empty() {
             continue;
         }
 
+        let file_imports = imports_by_file.get(source_file_id);
+
         // Strategy 2: Single candidate — no disambiguation needed
         if candidates.len() == 1 {
-            let candidate = &candidates[0];
+            let candidate = candidates[0];
             let mut confidence = 0.50; // Base for single candidate
 
             // Boost if import evidence
-            let imports = import_cache
-                .entry(*source_file_id)
-                .or_insert_with(|| queries::get_file_import_targets(conn, *source_file_id).unwrap_or_default());
-
-            if imports.iter().any(|imp| imp.target_file_id == candidate.file_id) {
-                confidence = 0.85;
+            if let Some(imps) = file_imports {
+                if imps.iter().any(|imp| imp.target_file_id == candidate.file_id) {
+                    confidence = 0.85;
+                } else if let Some(ip) = import_path {
+                    let candidate_path = file_paths.get(&candidate.file_id).map(|s| s.as_str()).unwrap_or("");
+                    if path_matches_import(ip, candidate_path) {
+                        confidence = 0.80;
+                    }
+                }
             } else if let Some(ip) = import_path {
-                if path_matches_import(ip, &get_file_path(conn, candidate.file_id)) {
+                let candidate_path = file_paths.get(&candidate.file_id).map(|s| s.as_str()).unwrap_or("");
+                if path_matches_import(ip, candidate_path) {
                     confidence = 0.80;
                 }
             }
@@ -97,12 +129,11 @@ pub fn resolve_cross_file_refs(conn: &Connection) -> Result<usize> {
 
         // Strategy 3: Multi-candidate disambiguation
         if let Some((target_id, confidence)) = disambiguate(
-            conn,
             &candidates,
-            *source_file_id,
             edge_kind,
             import_path.as_deref(),
-            &mut import_cache,
+            file_imports,
+            &file_paths,
         ) {
             if confidence > MIN_ACCEPTANCE_CONFIDENCE {
                 insert_stmt.execute(params![source_id, target_id, edge_kind, confidence, context])?;
@@ -117,29 +148,30 @@ pub fn resolve_cross_file_refs(conn: &Connection) -> Result<usize> {
 
 /// Score each candidate and return the best match with its confidence.
 fn disambiguate(
-    conn: &Connection,
-    candidates: &[CandidateNode],
-    source_file_id: i64,
+    candidates: &[&&CandidateNode],
     edge_kind: &str,
     import_path: Option<&str>,
-    import_cache: &mut HashMap<i64, Vec<ImportTarget>>,
+    file_imports: Option<&Vec<&queries::ImportEdgeRecord>>,
+    file_paths: &HashMap<i64, String>,
 ) -> Option<(i64, f64)> {
-    let imports = import_cache
-        .entry(source_file_id)
-        .or_insert_with(|| queries::get_file_import_targets(conn, source_file_id).unwrap_or_default());
-
     let mut best: Option<(i64, f64)> = None;
 
     for candidate in candidates {
         let mut confidence = 0.30_f64; // Base: name-only
 
         // Scope-aware: source file imports from the candidate's file
-        if imports.iter().any(|imp| imp.target_file_id == candidate.file_id) {
-            confidence = 0.85;
-        }
-        // Import-path guided: import_path matches candidate's file path
-        else if let Some(ip) = import_path {
-            if path_matches_import(ip, &get_file_path(conn, candidate.file_id)) {
+        if let Some(imps) = file_imports {
+            if imps.iter().any(|imp| imp.target_file_id == candidate.file_id) {
+                confidence = 0.85;
+            } else if let Some(ip) = import_path {
+                let candidate_path = file_paths.get(&candidate.file_id).map(|s| s.as_str()).unwrap_or("");
+                if path_matches_import(ip, candidate_path) {
+                    confidence = 0.80;
+                }
+            }
+        } else if let Some(ip) = import_path {
+            let candidate_path = file_paths.get(&candidate.file_id).map(|s| s.as_str()).unwrap_or("");
+            if path_matches_import(ip, candidate_path) {
                 confidence = 0.80;
             }
         }
@@ -189,25 +221,6 @@ fn path_matches_import(import_path: &str, file_path: &str) -> bool {
         .unwrap_or(file_path);
 
     file_stem.ends_with(import_clean) || file_stem == import_clean
-}
-
-/// Get file path for a given file_id. Returns empty string on failure.
-fn get_file_path(conn: &Connection, file_id: i64) -> String {
-    conn.query_row(
-        "SELECT path FROM files WHERE id = ?1",
-        params![file_id],
-        |row| row.get(0),
-    )
-    .unwrap_or_default()
-}
-
-fn find_node_by_qualified_name(conn: &Connection, qname: &str) -> Option<i64> {
-    conn.query_row(
-        "SELECT id FROM nodes WHERE qualified_name = ?1 LIMIT 1",
-        params![qname],
-        |row| row.get(0),
-    )
-    .ok()
 }
 
 #[cfg(test)]

@@ -83,7 +83,7 @@ fn bfs_direction(
             while let Some((edge_idx, neighbor)) = edges.next(graph) {
                 if let Some(kinds) = edge_kinds {
                     let edge = &graph[edge_idx];
-                    if !kinds.iter().any(|k| k == &edge.kind) {
+                    if !kinds.iter().any(|k| k == edge.kind.as_str()) {
                         continue;
                     }
                 }

@@ -48,6 +48,7 @@ pub async fn handle(
     Ok(CallToolResult::success(vec![Content::text(output)]))
 }
 
+#[allow(dead_code)]
 struct ProjectType {
     name: String,
     languages: Vec<String>,

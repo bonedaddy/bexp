@@ -6,6 +6,10 @@ pub async fn handle(
     server: &VexpServer,
     params: ImpactParams,
 ) -> Result<CallToolResult, ErrorData> {
+    if let Some(result) = super::wait_for_index(&server.indexer).await {
+        return Ok(result);
+    }
+
     let direction = params.direction.as_deref().unwrap_or("both");
     let depth = params.depth.unwrap_or(3);
 

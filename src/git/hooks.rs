@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::error::{Result, VexpError};
 
 /// Generate git hooks for vexp integration.
+#[allow(dead_code)]
 pub fn generate_hooks(workspace_root: &Path, vexp_binary: &str) -> Result<()> {
     let git_dir = workspace_root.join(".git");
     if !git_dir.exists() {

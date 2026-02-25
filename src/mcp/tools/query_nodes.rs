@@ -7,6 +7,10 @@ pub async fn handle(
     server: &VexpServer,
     params: QueryNodesParams,
 ) -> Result<CallToolResult, ErrorData> {
+    if let Some(result) = super::wait_for_index(&server.indexer).await {
+        return Ok(result);
+    }
+
     let limit = params.limit.unwrap_or(50);
     let exported_only = params.exported_only.unwrap_or(false);
     let include_pagerank = params.include_pagerank.unwrap_or(false);

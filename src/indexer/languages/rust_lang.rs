@@ -299,7 +299,8 @@ fn extract_from_node(
             }
         }
         "struct_item" => {
-            if let Some(extracted) = extract_struct(node, source, file_path, unresolved_refs) {
+            let expected_idx = nodes.len();
+            if let Some(extracted) = extract_struct(node, source, file_path, expected_idx, unresolved_refs) {
                 let idx = nodes.len();
                 let struct_idx = idx;
                 nodes.push(extracted);
@@ -505,8 +506,9 @@ fn extract_function(
         }
     }
 
-    // Extract attributes (derive, cfg)
+    // Extract attributes (cfg, etc.) — refs discarded since functions don't have derives
     let attr_metadata = extract_attributes(node, source, 0, &mut Vec::new());
+    // Note: source_idx=0 is harmless here since unresolved_refs are discarded
     if let Some(attrs) = attr_metadata {
         metadata.extend(attrs);
     }
@@ -561,6 +563,7 @@ fn extract_struct(
     node: Node,
     source: &str,
     file_path: &str,
+    expected_idx: usize,
     unresolved_refs: &mut Vec<UnresolvedRef>,
 ) -> Option<ExtractedNode> {
     let name_node = find_child_by_kind(node, "type_identifier")?;
@@ -572,9 +575,9 @@ fn extract_struct(
     // Build struct signature from fields (abbreviated to first 5)
     let signature = build_struct_signature(node, source, &name);
 
-    // Extract attributes (derive, cfg)
-    let idx_placeholder = 0; // Will be corrected after push
-    let metadata = extract_attributes(node, source, idx_placeholder, unresolved_refs);
+    // Extract attributes (derive, cfg) — use expected_idx so derive edges
+    // point to this struct node, not node 0.
+    let metadata = extract_attributes(node, source, expected_idx, unresolved_refs);
 
     Some(ExtractedNode {
         kind: NodeKind::Struct,

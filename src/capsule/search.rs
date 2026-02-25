@@ -7,7 +7,27 @@ use crate::types::Intent;
 
 use super::intent::intent_weights;
 
+/// Common English stop words shared by FTS sanitization and term extraction.
+const STOP_WORDS: &[&str] = &[
+    "the", "a", "an", "is", "are", "was", "were", "be", "been",
+    "being", "have", "has", "had", "do", "does", "did", "will",
+    "would", "could", "should", "may", "might", "can", "shall",
+    "to", "of", "in", "for", "on", "with", "at", "by", "from",
+    "it", "this", "that", "these", "those", "i", "me", "my",
+    "we", "our", "you", "your", "he", "she", "they", "them",
+    "what", "which", "who", "when", "where", "why", "how",
+    "not", "no", "nor", "and", "or", "but", "if", "then",
+];
+
+/// Additional code-specific stop words used only in LIKE-fallback term extraction.
+const CODE_STOP_WORDS: &[&str] = &[
+    "implementation", "function", "method", "class", "struct",
+    "code", "file", "module", "type", "interface", "trait",
+    "find", "show", "get", "search", "look", "where",
+];
+
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct SearchResult {
     pub node_id: i64,
     pub file_id: i64,
@@ -49,20 +69,16 @@ pub fn hybrid_search(
         .map(|(_, score)| score.abs())
         .fold(0.0_f64, f64::max);
 
-    // Batch-query confidence for all result node IDs
+    // Batch-query node+file data and confidence for all result node IDs
     let node_ids: Vec<i64> = fts_results.iter().map(|(id, _)| *id).collect();
+    let node_file_map = queries::get_nodes_with_files_by_ids(conn, &node_ids)?;
     let confidence_map = queries::get_avg_edge_confidence_batch(conn, &node_ids)?;
 
     let mut results: Vec<SearchResult> = Vec::new();
 
     for (node_id, bm25_raw) in &fts_results {
-        let node = match queries::get_node_by_id(conn, *node_id)? {
+        let nwf = match node_file_map.get(node_id) {
             Some(n) => n,
-            None => continue,
-        };
-
-        let file = match queries::get_file_by_id(conn, node.file_id)? {
-            Some(f) => f,
             None => continue,
         };
 
@@ -74,10 +90,10 @@ pub fn hybrid_search(
         };
 
         // TF-IDF approximation: simple term frequency in the name/signature
-        let tfidf = compute_tfidf_score(query, &node.name, node.signature.as_deref());
+        let tfidf = compute_tfidf_score(query, &nwf.name, nwf.signature.as_deref());
 
         // Graph centrality (PageRank)
-        let centrality = graph.get_pagerank(node.id);
+        let centrality = graph.get_pagerank(nwf.node_id);
 
         // Normalize centrality to 0-1 range (PageRank values are typically small)
         let centrality_norm = (centrality * 1000.0).min(1.0);
@@ -92,12 +108,12 @@ pub fn hybrid_search(
             + confidence_weight * confidence_norm;
 
         results.push(SearchResult {
-            node_id: node.id,
-            file_id: node.file_id,
-            name: node.name,
-            qualified_name: node.qualified_name,
-            kind: node.kind,
-            file_path: file.path,
+            node_id: nwf.node_id,
+            file_id: nwf.file_id,
+            name: nwf.name.clone(),
+            qualified_name: nwf.qualified_name.clone(),
+            kind: nwf.kind.clone(),
+            file_path: nwf.file_path.clone(),
             score,
         });
     }
@@ -174,54 +190,43 @@ fn fallback_like_search(
 /// Extract meaningful search terms from a natural language query.
 /// Strips stop words, short words, and common noise.
 fn extract_search_terms(query: &str) -> Vec<String> {
-    let stop_words = [
-        "the", "a", "an", "is", "are", "was", "were", "be", "been",
-        "being", "have", "has", "had", "do", "does", "did", "will",
-        "would", "could", "should", "may", "might", "can", "shall",
-        "to", "of", "in", "for", "on", "with", "at", "by", "from",
-        "it", "this", "that", "these", "those", "i", "me", "my",
-        "we", "our", "you", "your", "he", "she", "they", "them",
-        "what", "which", "who", "when", "where", "why", "how",
-        "not", "no", "nor", "and", "or", "but", "if", "then",
-        "implementation", "function", "method", "class", "struct",
-        "code", "file", "module", "type", "interface", "trait",
-        "find", "show", "get", "search", "look", "where",
-    ];
-
     query
         .split_whitespace()
         .filter(|w| {
             let lower = w.to_lowercase();
-            !stop_words.contains(&lower.as_str()) && w.len() > 1
+            !STOP_WORDS.contains(&lower.as_str())
+                && !CODE_STOP_WORDS.contains(&lower.as_str())
+                && w.len() > 1
         })
         .map(|w| w.to_lowercase())
         .collect()
 }
 
 fn sanitize_fts_query(query: &str) -> String {
-    // Convert natural language query to FTS5 query
-    // Remove stop words and special characters, join with OR
-    let stop_words = [
-        "the", "a", "an", "is", "are", "was", "were", "be", "been",
-        "being", "have", "has", "had", "do", "does", "did", "will",
-        "would", "could", "should", "may", "might", "can", "shall",
-        "to", "of", "in", "for", "on", "with", "at", "by", "from",
-        "it", "this", "that", "these", "those", "i", "me", "my",
-        "we", "our", "you", "your", "he", "she", "they", "them",
-        "what", "which", "who", "when", "where", "why", "how",
-        "not", "no", "nor", "and", "or", "but", "if", "then",
-    ];
-
-    let tokens: Vec<&str> = query
+    // Convert natural language query to FTS5 query.
+    // Remove stop words and strip FTS5 special characters to prevent query
+    // syntax injection (e.g. hyphens, colons, quotes cause parse errors).
+    let tokens: Vec<String> = query
         .split_whitespace()
         .filter(|w| {
             let lower = w.to_lowercase();
-            !stop_words.contains(&lower.as_str()) && w.len() > 1
+            !STOP_WORDS.contains(&lower.as_str()) && w.len() > 1
         })
+        .map(|w| {
+            w.chars()
+                .filter(|c| c.is_alphanumeric() || *c == '_')
+                .collect::<String>()
+        })
+        .filter(|w| w.len() > 1)
         .collect();
 
     if tokens.is_empty() {
-        return query.to_string();
+        // Fallback: strip specials from original query
+        let cleaned: String = query
+            .chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '_')
+            .collect();
+        return cleaned;
     }
 
     tokens.join(" OR ")

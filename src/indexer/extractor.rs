@@ -56,5 +56,6 @@ pub trait LanguageExtractor: Send + Sync {
         file_path: &str,
     ) -> ExtractedFile;
 
+    #[allow(dead_code)]
     fn language(&self) -> Language;
 }

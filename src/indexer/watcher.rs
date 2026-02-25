@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -44,7 +45,7 @@ impl FileWatcher {
             while let Ok(events) = std_rx.recv() {
                 match events {
                     Ok(events) => {
-                        let paths: Vec<PathBuf> = events
+                        let unique_paths: HashSet<PathBuf> = events
                             .into_iter()
                             .filter(|e| e.kind == DebouncedEventKind::Any)
                             .map(|e| e.path)
@@ -60,7 +61,8 @@ impl FileWatcher {
                             })
                             .collect();
 
-                        if !paths.is_empty() {
+                        if !unique_paths.is_empty() {
+                            let paths: Vec<PathBuf> = unique_paths.into_iter().collect();
                             let _ = tx.blocking_send(paths);
                         }
                     }

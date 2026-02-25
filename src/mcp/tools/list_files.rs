@@ -7,6 +7,10 @@ pub async fn handle(
     server: &VexpServer,
     params: ListFilesParams,
 ) -> Result<CallToolResult, ErrorData> {
+    if let Some(result) = super::wait_for_index(&server.indexer).await {
+        return Ok(result);
+    }
+
     let limit = params.limit.unwrap_or(100);
 
     let reader = server.db.reader();

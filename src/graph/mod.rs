@@ -11,19 +11,21 @@ use rusqlite::Connection;
 
 use crate::db::queries;
 use crate::error::{Result, VexpError};
+use crate::types::{EdgeKind, NodeKind};
 
 #[derive(Debug, Clone)]
 pub struct GraphNode {
     pub db_id: i64,
     pub name: String,
     pub qualified_name: Option<String>,
-    pub kind: String,
+    pub kind: NodeKind,
     pub file_id: i64,
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct GraphEdge {
-    pub kind: String,
+    pub kind: EdgeKind,
     pub confidence: f64,
 }
 
@@ -53,9 +55,9 @@ impl GraphEngine {
 
         let pagerank = centrality::compute_pagerank(&graph, 0.85, 20, 1e-6);
 
-        *self.graph.write().unwrap() = graph;
-        *self.id_to_index.write().unwrap() = id_map;
-        *self.pagerank.write().unwrap() = pagerank;
+        *self.graph.write().map_err(|_| VexpError::Graph("lock poisoned".into()))? = graph;
+        *self.id_to_index.write().map_err(|_| VexpError::Graph("lock poisoned".into()))? = id_map;
+        *self.pagerank.write().map_err(|_| VexpError::Graph("lock poisoned".into()))? = pagerank;
 
         Ok(())
     }
@@ -65,16 +67,22 @@ impl GraphEngine {
     }
 
     pub fn node_count(&self) -> usize {
-        self.graph.read().unwrap().node_count()
+        self.graph.read().map(|g| g.node_count()).unwrap_or(0)
     }
 
     pub fn edge_count(&self) -> usize {
-        self.graph.read().unwrap().edge_count()
+        self.graph.read().map(|g| g.edge_count()).unwrap_or(0)
     }
 
     pub fn get_pagerank(&self, db_id: i64) -> f64 {
-        let id_map = self.id_to_index.read().unwrap();
-        let pr = self.pagerank.read().unwrap();
+        let id_map = match self.id_to_index.read() {
+            Ok(m) => m,
+            Err(_) => return 0.0,
+        };
+        let pr = match self.pagerank.read() {
+            Ok(p) => p,
+            Err(_) => return 0.0,
+        };
         id_map
             .get(&db_id)
             .and_then(|idx| pr.get(idx))
@@ -89,7 +97,7 @@ impl GraphEngine {
         depth: usize,
         edge_kinds: Option<&[String]>,
     ) -> Result<String> {
-        let graph = self.graph.read().unwrap();
+        let graph = self.graph.read().map_err(|_| VexpError::Graph("lock poisoned".into()))?;
 
         // Find the node
         let node_idx = graph
@@ -117,7 +125,7 @@ impl GraphEngine {
     }
 
     pub fn find_paths(&self, from: &str, to: &str, max_depth: usize) -> Result<String> {
-        let graph = self.graph.read().unwrap();
+        let graph = self.graph.read().map_err(|_| VexpError::Graph("lock poisoned".into()))?;
 
         let from_idx = graph
             .node_indices()
@@ -153,7 +161,7 @@ impl GraphEngine {
                 output.push_str(&format!(
                     "- `{}` ({}){}\n",
                     node.qualified_name.as_deref().unwrap_or(&node.name),
-                    node.kind,
+                    node.kind, // Display impl delegates to as_str()
                     arrow
                 ));
             }
@@ -164,7 +172,7 @@ impl GraphEngine {
     }
 
     pub fn find_node_index_by_name(&self, name: &str) -> Option<i64> {
-        let graph = self.graph.read().unwrap();
+        let graph = self.graph.read().ok()?;
         graph
             .node_indices()
             .find(|&idx| {
@@ -179,21 +187,27 @@ impl GraphEngine {
         n: usize,
         kind_filter: Option<&str>,
     ) -> Vec<(String, String, f64)> {
-        let graph = self.graph.read().unwrap();
-        let pr = self.pagerank.read().unwrap();
+        let graph = match self.graph.read() {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
+        let pr = match self.pagerank.read() {
+            Ok(p) => p,
+            Err(_) => return Vec::new(),
+        };
 
         let mut entries: Vec<(String, String, f64)> = pr
             .iter()
             .filter_map(|(idx, &score)| {
                 let node = &graph[*idx];
                 if let Some(kind) = kind_filter {
-                    if node.kind != kind {
+                    if node.kind.as_str() != kind {
                         return None;
                     }
                 }
                 Some((
                     node.qualified_name.clone().unwrap_or_else(|| node.name.clone()),
-                    node.kind.clone(),
+                    node.kind.as_str().to_string(),
                     score,
                 ))
             })
@@ -205,10 +219,13 @@ impl GraphEngine {
     }
 
     pub fn get_edge_kind_counts(&self) -> Vec<(String, usize)> {
-        let graph = self.graph.read().unwrap();
+        let graph = match self.graph.read() {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
         let mut counts: HashMap<String, usize> = HashMap::new();
         for edge in graph.edge_weights() {
-            *counts.entry(edge.kind.clone()).or_insert(0) += 1;
+            *counts.entry(edge.kind.as_str().to_string()).or_insert(0) += 1;
         }
         let mut result: Vec<(String, usize)> = counts.into_iter().collect();
         result.sort_by(|a, b| b.1.cmp(&a.1));
@@ -222,8 +239,14 @@ impl GraphEngine {
         pivot_node_ids: &HashSet<i64>,
         included_node_ids: &HashSet<i64>,
     ) -> Vec<i64> {
-        let graph = self.graph.read().unwrap();
-        let id_map = self.id_to_index.read().unwrap();
+        let graph = match self.graph.read() {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
+        let id_map = match self.id_to_index.read() {
+            Ok(m) => m,
+            Err(_) => return Vec::new(),
+        };
 
         let bridge_edge_kinds = ["calls", "imports", "implements", "extends"];
         let mut candidates = Vec::new();
@@ -289,8 +312,8 @@ impl GraphEngine {
             return self.build_from_db(conn);
         }
 
-        let mut graph = self.graph.write().unwrap();
-        let mut id_map = self.id_to_index.write().unwrap();
+        let mut graph = self.graph.write().map_err(|_| VexpError::Graph("lock poisoned".into()))?;
+        let mut id_map = self.id_to_index.write().map_err(|_| VexpError::Graph("lock poisoned".into()))?;
 
         // Collect indices to remove: all nodes belonging to changed files
         let changed_file_set: HashSet<i64> = changed_file_ids.iter().copied().collect();
@@ -325,7 +348,7 @@ impl GraphEngine {
                 db_id: node.id,
                 name: node.name.clone(),
                 qualified_name: node.qualified_name.clone(),
-                kind: node.kind.clone(),
+                kind: NodeKind::parse(&node.kind).unwrap_or(NodeKind::External),
                 file_id: node.file_id,
             });
             id_map.insert(node.id, idx);
@@ -343,7 +366,7 @@ impl GraphEngine {
                     src,
                     tgt,
                     GraphEdge {
-                        kind: edge.kind.clone(),
+                        kind: EdgeKind::parse(&edge.kind).unwrap_or(EdgeKind::Calls),
                         confidence: edge.confidence,
                     },
                 );
@@ -354,10 +377,10 @@ impl GraphEngine {
         drop(id_map);
 
         // Recompute PageRank (global property, must be full)
-        let graph_ref = self.graph.read().unwrap();
+        let graph_ref = self.graph.read().map_err(|_| VexpError::Graph("lock poisoned".into()))?;
         let pagerank = centrality::compute_pagerank(&graph_ref, 0.85, 20, 1e-6);
         drop(graph_ref);
-        *self.pagerank.write().unwrap() = pagerank;
+        *self.pagerank.write().map_err(|_| VexpError::Graph("lock poisoned".into()))? = pagerank;
 
         tracing::info!(
             "Incremental graph update: removed {} old nodes, added {} new nodes",

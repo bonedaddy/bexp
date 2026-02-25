@@ -1,7 +1,7 @@
 use tiktoken_rs::cl100k_base;
 
 pub struct TokenCounter {
-    bpe: tiktoken_rs::CoreBPE,
+    bpe: Option<tiktoken_rs::CoreBPE>,
 }
 
 impl Default for TokenCounter {
@@ -12,12 +12,21 @@ impl Default for TokenCounter {
 
 impl TokenCounter {
     pub fn new() -> Self {
-        Self {
-            bpe: cl100k_base().expect("Failed to load cl100k_base tokenizer"),
-        }
+        let bpe = match cl100k_base() {
+            Ok(b) => Some(b),
+            Err(e) => {
+                tracing::warn!("Failed to load cl100k_base tokenizer: {}. Token counts will be estimated.", e);
+                None
+            }
+        };
+        Self { bpe }
     }
 
     pub fn count(&self, text: &str) -> usize {
-        self.bpe.encode_ordinary(text).len()
+        match &self.bpe {
+            Some(bpe) => bpe.encode_ordinary(text).len(),
+            // Rough estimate: ~4 chars per token for code
+            None => text.len() / 4,
+        }
     }
 }

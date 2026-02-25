@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 pub mod capsule;
 pub mod config;
 pub mod db;

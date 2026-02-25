@@ -7,6 +7,10 @@ pub async fn handle(
     server: &VexpServer,
     params: QueryEdgesParams,
 ) -> Result<CallToolResult, ErrorData> {
+    if let Some(result) = super::wait_for_index(&server.indexer).await {
+        return Ok(result);
+    }
+
     let limit = params.limit.unwrap_or(50);
 
     let reader = server.db.reader();

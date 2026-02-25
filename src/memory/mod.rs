@@ -179,7 +179,14 @@ fn generate_headline(content: &str) -> String {
     if first_line.len() <= 80 {
         first_line.to_string()
     } else {
-        format!("{}...", &first_line[..77])
+        // Use char_indices to find a safe UTF-8 boundary
+        let end = first_line
+            .char_indices()
+            .map(|(i, _)| i)
+            .take_while(|&i| i <= 77)
+            .last()
+            .unwrap_or(0);
+        format!("{}...", &first_line[..end])
     }
 }
 
@@ -187,7 +194,13 @@ fn generate_summary(content: &str) -> String {
     if content.len() <= 200 {
         content.to_string()
     } else {
-        format!("{}...", &content[..197])
+        let end = content
+            .char_indices()
+            .map(|(i, _)| i)
+            .take_while(|&i| i <= 197)
+            .last()
+            .unwrap_or(0);
+        format!("{}...", &content[..end])
     }
 }
 

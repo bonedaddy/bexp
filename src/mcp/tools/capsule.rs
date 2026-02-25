@@ -6,20 +6,8 @@ pub async fn handle(
     server: &VexpServer,
     params: CapsuleParams,
 ) -> Result<CallToolResult, ErrorData> {
-    // Wait for index to be ready (up to 60 seconds)
-    if !server.indexer.index_ready() {
-        tracing::info!("Waiting for index to be ready before capsule generation...");
-        for _ in 0..120 {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            if server.indexer.index_ready() {
-                break;
-            }
-        }
-        if !server.indexer.index_ready() {
-            return Ok(CallToolResult::success(vec![Content::text(
-                "Index is still building. Try again in a moment, or run `trigger_reindex` with full=true.",
-            )]));
-        }
+    if let Some(result) = super::wait_for_index(&server.indexer).await {
+        return Ok(result);
     }
 
     let budget = params.token_budget.unwrap_or(server.config.token_budget);

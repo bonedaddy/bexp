@@ -27,21 +27,29 @@ pub fn compute_pagerank(
         .map(|idx| (idx, initial))
         .collect();
 
+    // Pre-compute out-degrees for all nodes (avoids recomputing per-neighbor per-iteration)
+    let out_degrees: HashMap<NodeIndex, f64> = graph
+        .node_indices()
+        .map(|idx| {
+            let degree = graph
+                .neighbors_directed(idx, petgraph::Direction::Outgoing)
+                .count() as f64;
+            (idx, degree)
+        })
+        .collect();
+
+    // Collect dangling nodes (no outgoing edges) once
+    let dangling_nodes: Vec<NodeIndex> = graph
+        .node_indices()
+        .filter(|idx| out_degrees[idx] == 0.0)
+        .collect();
+
     for iteration in 0..max_iterations {
         let mut new_scores: HashMap<NodeIndex, f64> = HashMap::with_capacity(n);
         let mut max_diff = 0.0_f64;
 
-        // Compute dangling node contribution (nodes with no outgoing edges)
-        let dangling_sum: f64 = graph
-            .node_indices()
-            .filter(|&idx| {
-                graph
-                    .neighbors_directed(idx, petgraph::Direction::Outgoing)
-                    .next()
-                    .is_none()
-            })
-            .map(|idx| scores[&idx])
-            .sum();
+        // Compute dangling node contribution
+        let dangling_sum: f64 = dangling_nodes.iter().map(|idx| scores[idx]).sum();
 
         let dangling_contribution = dangling_sum / n_f64;
 
@@ -50,9 +58,7 @@ pub fn compute_pagerank(
 
             // Sum contributions from incoming neighbors
             for neighbor in graph.neighbors_directed(node, petgraph::Direction::Incoming) {
-                let out_degree = graph
-                    .neighbors_directed(neighbor, petgraph::Direction::Outgoing)
-                    .count() as f64;
+                let out_degree = out_degrees[&neighbor];
                 if out_degree > 0.0 {
                     sum += scores[&neighbor] / out_degree;
                 }

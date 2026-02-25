@@ -5,7 +5,7 @@ use std::time::Instant;
 /// Cache key for capsule results.
 #[derive(Hash, Eq, PartialEq, Clone)]
 struct CacheKey {
-    query_hash: u64,
+    query: String,
     token_budget: usize,
     intent: String,
     index_generation: u64,
@@ -94,20 +94,10 @@ impl CapsuleCache {
 
     fn make_key(query: &str, token_budget: usize, intent: &str, index_generation: u64) -> CacheKey {
         CacheKey {
-            query_hash: Self::hash_query(query),
+            query: query.to_string(),
             token_budget,
             intent: intent.to_string(),
             index_generation,
         }
-    }
-
-    fn hash_query(query: &str) -> u64 {
-        // Simple FNV-1a hash
-        let mut hash: u64 = 0xcbf29ce484222325;
-        for byte in query.bytes() {
-            hash ^= byte as u64;
-            hash = hash.wrapping_mul(0x100000001b3);
-        }
-        hash
     }
 }

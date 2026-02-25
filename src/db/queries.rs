@@ -3,6 +3,7 @@ use rusqlite::{params, Connection};
 use crate::error::Result;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct FileRecord {
     pub id: i64,
     pub path: String,
@@ -14,6 +15,7 @@ pub struct FileRecord {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct NodeRecord {
     pub id: i64,
     pub file_id: i64,
@@ -32,6 +34,7 @@ pub struct NodeRecord {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct EdgeRecord {
     pub id: i64,
     pub source_node_id: i64,
@@ -271,36 +274,6 @@ pub fn search_nodes_fts(conn: &Connection, query: &str, limit: usize) -> Result<
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
-}
-
-pub fn get_node_by_id(conn: &Connection, id: i64) -> Result<Option<NodeRecord>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, file_id, kind, name, qualified_name, signature, docstring,
-                line_start, line_end, col_start, col_end, visibility, is_export, metadata
-         FROM nodes WHERE id = ?1",
-    )?;
-    let mut rows = stmt.query_map(params![id], |row| {
-        Ok(NodeRecord {
-            id: row.get(0)?,
-            file_id: row.get(1)?,
-            kind: row.get(2)?,
-            name: row.get(3)?,
-            qualified_name: row.get(4)?,
-            signature: row.get(5)?,
-            docstring: row.get(6)?,
-            line_start: row.get(7)?,
-            line_end: row.get(8)?,
-            col_start: row.get(9)?,
-            col_end: row.get(10)?,
-            visibility: row.get(11)?,
-            is_export: row.get::<_, i32>(12)? != 0,
-            metadata: row.get(13)?,
-        })
-    })?;
-    match rows.next() {
-        Some(r) => Ok(Some(r?)),
-        None => Ok(None),
-    }
 }
 
 pub fn get_file_by_id(conn: &Connection, id: i64) -> Result<Option<FileRecord>> {
@@ -605,6 +578,7 @@ pub fn list_files_filtered(
     Ok(rows)
 }
 
+#[allow(dead_code)]
 pub struct UnresolvedRefRecord {
     pub source_name: String,
     pub source_qualified_name: Option<String>,
@@ -756,6 +730,7 @@ pub fn increment_index_generation(conn: &Connection) -> Result<u64> {
 
 /// A candidate node returned by name-based resolution queries.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct CandidateNode {
     pub id: i64,
     pub file_id: i64,
@@ -767,6 +742,7 @@ pub struct CandidateNode {
 
 /// An import target: a resolved edge from a file to another file's node.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ImportTarget {
     pub target_node_id: i64,
     pub target_file_id: i64,
@@ -775,6 +751,7 @@ pub struct ImportTarget {
 
 /// A node's range information for budget allocation.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct NodeRange {
     pub node_id: i64,
     pub file_id: i64,
@@ -787,6 +764,7 @@ pub struct NodeRange {
 }
 
 /// Find ALL exported/pub nodes matching `name` from files other than `source_file_id`.
+#[allow(dead_code)]
 pub fn find_candidate_nodes_by_name(
     conn: &Connection,
     name: &str,
@@ -816,6 +794,7 @@ pub fn find_candidate_nodes_by_name(
 }
 
 /// Get all import edges from a file: returns (target_node_id, target_file_id, target_file_path).
+#[allow(dead_code)]
 pub fn get_file_import_targets(
     conn: &Connection,
     file_id: i64,
@@ -882,14 +861,57 @@ pub fn get_node_ranges_by_ids(
     Ok(rows)
 }
 
-/// Get all (path, mtime_ns) pairs sorted by path.
-pub fn get_all_file_mtimes(conn: &Connection) -> Result<Vec<(String, i64)>> {
-    let mut stmt = conn.prepare(
-        "SELECT path, mtime_ns FROM files ORDER BY path",
-    )?;
+/// A node record combined with its file path, for batch hybrid search.
+#[derive(Debug, Clone)]
+pub struct NodeWithFile {
+    pub node_id: i64,
+    pub file_id: i64,
+    pub name: String,
+    pub qualified_name: Option<String>,
+    pub kind: String,
+    pub signature: Option<String>,
+    pub file_path: String,
+}
+
+/// Batch-fetch node+file data for a set of node IDs (for hybrid search).
+pub fn get_nodes_with_files_by_ids(
+    conn: &Connection,
+    node_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, NodeWithFile>> {
+    if node_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let placeholders: Vec<String> = (1..=node_ids.len()).map(|i| format!("?{i}")).collect();
+    let in_clause = placeholders.join(",");
+    let sql = format!(
+        "SELECT n.id, n.file_id, n.name, n.qualified_name, n.kind, n.signature, f.path
+         FROM nodes n
+         JOIN files f ON f.id = n.file_id
+         WHERE n.id IN ({in_clause})"
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let bind_values: Vec<Box<dyn rusqlite::types::ToSql>> =
+        node_ids.iter().map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
+
     let rows = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+        .query_map(params_refs.as_slice(), |row| {
+            Ok(NodeWithFile {
+                node_id: row.get(0)?,
+                file_id: row.get(1)?,
+                name: row.get(2)?,
+                qualified_name: row.get(3)?,
+                kind: row.get(4)?,
+                signature: row.get(5)?,
+                file_path: row.get(6)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .map(|nwf| (nwf.node_id, nwf))
+        .collect();
     Ok(rows)
 }
 
@@ -901,43 +923,6 @@ pub fn get_file_node_count(conn: &Connection, file_id: i64) -> Result<i64> {
         |r| r.get(0),
     )?;
     Ok(count)
-}
-
-/// Get nodes within a line range for a given file.
-pub fn get_nodes_in_range(
-    conn: &Connection,
-    file_id: i64,
-    line_start: i64,
-    line_end: i64,
-) -> Result<Vec<NodeRecord>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, file_id, kind, name, qualified_name, signature, docstring,
-                line_start, line_end, col_start, col_end, visibility, is_export, metadata
-         FROM nodes
-         WHERE file_id = ?1 AND line_end >= ?2 AND line_start <= ?3
-         ORDER BY line_start",
-    )?;
-    let rows = stmt
-        .query_map(params![file_id, line_start, line_end], |row| {
-            Ok(NodeRecord {
-                id: row.get(0)?,
-                file_id: row.get(1)?,
-                kind: row.get(2)?,
-                name: row.get(3)?,
-                qualified_name: row.get(4)?,
-                signature: row.get(5)?,
-                docstring: row.get(6)?,
-                line_start: row.get(7)?,
-                line_end: row.get(8)?,
-                col_start: row.get(9)?,
-                col_end: row.get(10)?,
-                visibility: row.get(11)?,
-                is_export: row.get::<_, i32>(12)? != 0,
-                metadata: row.get(13)?,
-            })
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
 }
 
 /// Get all nodes for the given file IDs (for incremental graph updates).
@@ -984,6 +969,79 @@ pub fn get_nodes_for_files(conn: &Connection, file_ids: &[i64]) -> Result<Vec<No
     Ok(rows)
 }
 
+/// Get all file path -> mtime_ns mappings for per-file mtime comparison.
+pub fn get_all_file_mtimes(conn: &Connection) -> Result<std::collections::HashMap<String, i64>> {
+    let mut stmt = conn.prepare("SELECT path, mtime_ns FROM files")?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+/// Get all file path -> id mappings.
+pub fn get_all_file_paths(conn: &Connection) -> Result<std::collections::HashMap<i64, String>> {
+    let mut stmt = conn.prepare("SELECT id, path FROM files")?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+/// Get all exported/public nodes for batch resolver lookups.
+pub fn get_all_exported_nodes(conn: &Connection) -> Result<Vec<CandidateNode>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, file_id, kind, name, qualified_name, signature
+         FROM nodes
+         WHERE is_export = 1 OR visibility = 'pub' OR visibility = 'public'",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(CandidateNode {
+                id: row.get(0)?,
+                file_id: row.get(1)?,
+                kind: row.get(2)?,
+                name: row.get(3)?,
+                qualified_name: row.get(4)?,
+                signature: row.get(5)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// An import edge with source and target file IDs for batch loading.
+#[derive(Debug, Clone)]
+pub struct ImportEdgeRecord {
+    pub source_file_id: i64,
+    pub target_file_id: i64,
+}
+
+/// Get all import edges for batch resolver lookups.
+pub fn get_all_import_edges(conn: &Connection) -> Result<Vec<ImportEdgeRecord>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT sn.file_id, tn.file_id
+         FROM edges e
+         JOIN nodes sn ON sn.id = e.source_node_id
+         JOIN nodes tn ON tn.id = e.target_node_id
+         WHERE e.kind = 'imports'",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(ImportEdgeRecord {
+                source_file_id: row.get(0)?,
+                target_file_id: row.get(1)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 /// Get all edges where either endpoint is in the given node set.
 pub fn get_edges_for_nodes(conn: &Connection, node_ids: &[i64]) -> Result<Vec<EdgeRecord>> {
     if node_ids.is_empty() {
@@ -999,11 +1057,9 @@ pub fn get_edges_for_nodes(conn: &Connection, node_ids: &[i64]) -> Result<Vec<Ed
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    // node_ids twice (once per sub-clause)
+    // Numbered placeholders (?1, ?2, ...) are reused across both IN clauses,
+    // so we only bind node_ids once.
     let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    for &id in node_ids {
-        bind_values.push(Box::new(id));
-    }
     for &id in node_ids {
         bind_values.push(Box::new(id));
     }
@@ -1025,16 +1081,3 @@ pub fn get_edges_for_nodes(conn: &Connection, node_ids: &[i64]) -> Result<Vec<Ed
     Ok(rows)
 }
 
-/// Get the source file_id for a node.
-pub fn get_node_file_id(conn: &Connection, node_id: i64) -> Result<Option<i64>> {
-    let result = conn.query_row(
-        "SELECT file_id FROM nodes WHERE id = ?1",
-        params![node_id],
-        |row| row.get(0),
-    );
-    match result {
-        Ok(id) => Ok(Some(id)),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-        Err(e) => Err(e.into()),
-    }
-}

@@ -17,6 +17,13 @@ pub enum NodeKind {
     Variable,
     Constant,
     Import,
+    External,
+}
+
+impl std::fmt::Display for NodeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 impl NodeKind {
@@ -36,6 +43,7 @@ impl NodeKind {
             Self::Variable => "variable",
             Self::Constant => "constant",
             Self::Import => "import",
+            Self::External => "external",
         }
     }
 
@@ -55,6 +63,7 @@ impl NodeKind {
             "variable" => Some(Self::Variable),
             "constant" => Some(Self::Constant),
             "import" => Some(Self::Import),
+            "external" => Some(Self::External),
             _ => None,
         }
     }
@@ -69,6 +78,12 @@ pub enum EdgeKind {
     Extends,
     TypeRef,
     Contains,
+}
+
+impl std::fmt::Display for EdgeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 impl EdgeKind {
@@ -215,10 +230,13 @@ mod tests {
             NodeKind::Variable,
             NodeKind::Constant,
             NodeKind::Import,
+            NodeKind::External,
         ];
 
         for kind in all {
             assert_eq!(NodeKind::parse(kind.as_str()), Some(kind));
+            // Verify Display matches as_str
+            assert_eq!(kind.to_string(), kind.as_str());
         }
 
         assert_eq!(NodeKind::parse("not_a_kind"), None);
