@@ -11,10 +11,10 @@ use std::sync::Arc;
 
 use rayon::prelude::*;
 
-use crate::config::VexpConfig;
+use crate::config::bexpConfig;
 use crate::db::queries;
 use crate::db::Database;
-use crate::error::{Result, VexpError};
+use crate::error::{Result, bexpError};
 use crate::types::Language;
 
 use self::extractor::ExtractedFile;
@@ -23,7 +23,7 @@ use self::scanner::Scanner;
 
 pub struct IndexerService {
     db: Arc<Database>,
-    config: Arc<VexpConfig>,
+    config: Arc<bexpConfig>,
     workspace_root: PathBuf,
     parser_pool: ParserPool,
     watcher_active: AtomicBool,
@@ -31,7 +31,7 @@ pub struct IndexerService {
 }
 
 impl IndexerService {
-    pub fn new(db: Arc<Database>, config: Arc<VexpConfig>, workspace_root: PathBuf) -> Self {
+    pub fn new(db: Arc<Database>, config: Arc<bexpConfig>, workspace_root: PathBuf) -> Self {
         Self {
             db,
             config,
@@ -238,7 +238,7 @@ impl IndexerService {
 
         {
             let mut conn = self.db.writer();
-            let tx = conn.transaction().map_err(VexpError::Database)?;
+            let tx = conn.transaction().map_err(bexpError::Database)?;
 
             for (path, extracted) in &extracted {
                 let rel_path = path
@@ -262,7 +262,7 @@ impl IndexerService {
                 edge_count += ec;
             }
 
-            tx.commit().map_err(VexpError::Database)?;
+            tx.commit().map_err(bexpError::Database)?;
         }
 
         // Resolve cross-file references
@@ -363,7 +363,7 @@ impl IndexerService {
         // Uses rusqlite Transaction for automatic rollback on error.
         if !deletions.is_empty() || !parsed_files.is_empty() {
             let mut conn = self.db.writer();
-            let tx = conn.transaction().map_err(VexpError::Database)?;
+            let tx = conn.transaction().map_err(bexpError::Database)?;
 
             for del in &deletions {
                 if let Ok(Some(file)) = queries::get_file_by_path(&tx, &del.rel_path) {
@@ -393,7 +393,7 @@ impl IndexerService {
                 edge_count += ec;
             }
 
-            tx.commit().map_err(VexpError::Database)?;
+            tx.commit().map_err(bexpError::Database)?;
         }
 
         let resolved = self.resolve_references()?;
@@ -416,7 +416,7 @@ impl IndexerService {
         let content = std::fs::read_to_string(path)?;
 
         if content.len() > self.config.max_file_size {
-            return Err(VexpError::Index(format!(
+            return Err(bexpError::Index(format!(
                 "File too large: {} bytes",
                 content.len()
             )));
@@ -507,10 +507,10 @@ mod tests {
 
     #[test]
     fn mtime_hash_skips_reindex_when_unchanged() {
-        let workspace = TempWorkspace::new("vexp-mtime-skip").unwrap();
+        let workspace = TempWorkspace::new("bexp-mtime-skip").unwrap();
         workspace.write_file("lib.rs", "pub fn hello() {}\n").unwrap();
 
-        let config = Arc::new(VexpConfig::default());
+        let config = Arc::new(bexpConfig::default());
         let db_path = config.db_path(&workspace.path);
         let db = Arc::new(crate::db::Database::open(&db_path).unwrap());
         let indexer = IndexerService::new(db.clone(), config, workspace.path.clone());
@@ -528,10 +528,10 @@ mod tests {
 
     #[test]
     fn mtime_hash_reindexes_when_file_touched() {
-        let workspace = TempWorkspace::new("vexp-mtime-touch").unwrap();
+        let workspace = TempWorkspace::new("bexp-mtime-touch").unwrap();
         workspace.write_file("lib.rs", "pub fn hello() {}\n").unwrap();
 
-        let config = Arc::new(VexpConfig::default());
+        let config = Arc::new(bexpConfig::default());
         let db_path = config.db_path(&workspace.path);
         let db = Arc::new(crate::db::Database::open(&db_path).unwrap());
         let indexer = IndexerService::new(db.clone(), config, workspace.path.clone());

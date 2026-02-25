@@ -8,16 +8,16 @@ use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 use serde::Deserialize;
 
 use crate::capsule::CapsuleGenerator;
-use crate::config::VexpConfig;
+use crate::config::bexpConfig;
 use crate::db::Database;
 use crate::graph::GraphEngine;
 use crate::indexer::IndexerService;
 use crate::memory::MemoryService;
 use crate::skeleton::Skeletonizer;
 
-pub struct VexpServer {
+pub struct bexpServer {
     pub db: Arc<Database>,
-    pub config: Arc<VexpConfig>,
+    pub config: Arc<bexpConfig>,
     pub indexer: Arc<IndexerService>,
     pub graph: Arc<GraphEngine>,
     pub skeletonizer: Arc<Skeletonizer>,
@@ -197,11 +197,11 @@ pub struct ReindexParams {
 }
 
 #[tool_router]
-impl VexpServer {
+impl bexpServer {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: Arc<Database>,
-        config: Arc<VexpConfig>,
+        config: Arc<bexpConfig>,
         indexer: Arc<IndexerService>,
         graph: Arc<GraphEngine>,
         skeletonizer: Arc<Skeletonizer>,
@@ -259,7 +259,7 @@ impl VexpServer {
         super::tools::status::handle(self).await
     }
 
-    #[tool(description = "Detect project type and generate .vexp/config.toml with appropriate settings.")]
+    #[tool(description = "Detect project type and generate .bexp/config.toml with appropriate settings.")]
     async fn workspace_setup(
         &self,
         Parameters(params): Parameters<SetupParams>,
@@ -362,20 +362,20 @@ impl VexpServer {
         super::tools::staleness::handle(self).await
     }
 
-    #[tool(description = "Show the current vexp configuration: token budget, skeleton level, exclude patterns, memory settings, and more.")]
+    #[tool(description = "Show the current bexp configuration: token budget, skeleton level, exclude patterns, memory settings, and more.")]
     async fn get_config(&self) -> Result<CallToolResult, ErrorData> {
         super::tools::get_config::handle(self).await
     }
 }
 
 #[tool_handler]
-impl ServerHandler for VexpServer {
+impl ServerHandler for bexpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: ProtocolVersion::V_2024_11_05,
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             server_info: Implementation {
-                name: "vexp".into(),
+                name: "bexp".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
                 title: None,
                 description: Some("Local-first context engine for AI coding agents".into()),
@@ -383,7 +383,7 @@ impl ServerHandler for VexpServer {
                 website_url: None,
             },
             instructions: Some(
-                "Vexp is a local-first context engine for AI coding agents. It indexes \
+                "bexp is a local-first context engine for AI coding agents. It indexes \
                  source code into a graph of symbols and relationships, then serves \
                  token-efficient context over MCP.\n\n\
                  ## Quick start\n\

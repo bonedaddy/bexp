@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum VexpError {
+pub enum bexpError {
     #[error("Database error: {0}")]
     Database(#[from] rusqlite::Error),
 
@@ -48,4 +48,4 @@ pub enum VexpError {
     BudgetExceeded { requested: usize, max: usize },
 }
 
-pub type Result<T> = std::result::Result<T, VexpError>;
+pub type Result<T> = std::result::Result<T, bexpError>;

@@ -1,9 +1,9 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::memory::observation;
-use crate::mcp::server::VexpServer;
+use crate::mcp::server::bexpServer;
 
-pub async fn handle(server: &VexpServer) -> Result<CallToolResult, ErrorData> {
+pub async fn handle(server: &bexpServer) -> Result<CallToolResult, ErrorData> {
     if let Some(result) = super::wait_for_index(&server.indexer).await {
         return Ok(result);
     }

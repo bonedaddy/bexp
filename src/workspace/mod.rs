@@ -4,13 +4,13 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
-use crate::error::{Result, VexpError};
+use crate::error::{bexpError, Result};
 
-/// Open another workspace's vexp database in read-only mode.
+/// Open another workspace's bexp database in read-only mode.
 pub fn open_external_db(workspace_root: &str) -> Result<Connection> {
-    let db_path = Path::new(workspace_root).join(".vexp/index.db");
+    let db_path = Path::new(workspace_root).join(".bexp/index.db");
     if !db_path.exists() {
-        return Err(VexpError::Config(format!(
+        return Err(bexpError::Config(format!(
             "External workspace DB not found: {}",
             db_path.display()
         )));

@@ -6,7 +6,7 @@ use std::time::Duration;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use tokio::sync::mpsc;
 
-use crate::config::VexpConfig;
+use crate::config::bexpConfig;
 use crate::db::Database;
 use crate::graph::GraphEngine;
 use crate::indexer::IndexerService;
@@ -19,7 +19,7 @@ pub struct FileWatcher {
 impl FileWatcher {
     pub fn start(
         workspace_root: PathBuf,
-        config: Arc<VexpConfig>,
+        config: Arc<bexpConfig>,
         indexer: Arc<IndexerService>,
         graph: Arc<GraphEngine>,
         db: Arc<Database>,

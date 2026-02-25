@@ -1,13 +1,13 @@
 use std::path::Path;
 
-use crate::error::{Result, VexpError};
+use crate::error::{Result, bexpError};
 
-/// Generate git hooks for vexp integration.
+/// Generate git hooks for bexp integration.
 #[allow(dead_code)]
-pub fn generate_hooks(workspace_root: &Path, vexp_binary: &str) -> Result<()> {
+pub fn generate_hooks(workspace_root: &Path, bexp_binary: &str) -> Result<()> {
     let git_dir = workspace_root.join(".git");
     if !git_dir.exists() {
-        return Err(VexpError::Config("Not a git repository".to_string()));
+        return Err(bexpError::Config("Not a git repository".to_string()));
     }
 
     let hooks_dir = git_dir.join("hooks");
@@ -17,12 +17,12 @@ pub fn generate_hooks(workspace_root: &Path, vexp_binary: &str) -> Result<()> {
     let pre_commit = hooks_dir.join("pre-commit");
     let pre_commit_content = format!(
         r#"#!/bin/sh
-# Vexp: Flush WAL before commit
+# bexp: Flush WAL before commit
 if command -v {} >/dev/null 2>&1; then
     {} flush-wal 2>/dev/null || true
 fi
 "#,
-        vexp_binary, vexp_binary
+        bexp_binary, bexp_binary
     );
     write_hook(&pre_commit, &pre_commit_content)?;
 
@@ -30,12 +30,12 @@ fi
     let post_merge = hooks_dir.join("post-merge");
     let post_merge_content = format!(
         r#"#!/bin/sh
-# Vexp: Re-index after merge
+# bexp: Re-index after merge
 if command -v {} >/dev/null 2>&1; then
     {} reindex 2>/dev/null &
 fi
 "#,
-        vexp_binary, vexp_binary
+        bexp_binary, bexp_binary
     );
     write_hook(&post_merge, &post_merge_content)?;
 
@@ -43,7 +43,7 @@ fi
     let post_checkout = hooks_dir.join("post-checkout");
     let post_checkout_content = format!(
         r#"#!/bin/sh
-# Vexp: Re-index after branch switch
+# bexp: Re-index after branch switch
 # Only run on branch checkout (not file checkout)
 if [ "$3" = "1" ]; then
     if command -v {} >/dev/null 2>&1; then
@@ -51,7 +51,7 @@ if [ "$3" = "1" ]; then
     fi
 fi
 "#,
-        vexp_binary, vexp_binary
+        bexp_binary, bexp_binary
     );
     write_hook(&post_checkout, &post_checkout_content)?;
 
@@ -62,7 +62,7 @@ fn write_hook(path: &Path, content: &str) -> Result<()> {
     // Don't overwrite existing hooks that aren't ours
     if path.exists() {
         let existing = std::fs::read_to_string(path)?;
-        if !existing.contains("Vexp:") {
+        if !existing.contains("bexp:") {
             // Append to existing hook
             let appended = format!("{}\n\n{}", existing.trim_end(), content);
             std::fs::write(path, appended)?;

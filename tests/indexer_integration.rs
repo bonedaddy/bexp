@@ -3,10 +3,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use vexp::config::VexpConfig;
-use vexp::db::{queries, Database};
-use vexp::error::Result;
-use vexp::indexer::IndexerService;
+use bexp::config::bexpConfig;
+use bexp::db::{queries, Database};
+use bexp::error::Result;
+use bexp::indexer::IndexerService;
 
 struct TempWorkspace {
     path: PathBuf,
@@ -47,14 +47,14 @@ impl Drop for TempWorkspace {
 
 #[test]
 fn full_index_populates_db_and_resolves_cross_file_call_edges() -> Result<()> {
-    let workspace = TempWorkspace::new("vexp-indexer-integration")?;
+    let workspace = TempWorkspace::new("bexp-indexer-integration")?;
     workspace.write_file("api.rs", "pub fn helper() {}\n")?;
     workspace.write_file(
         "consumer.rs",
         "fn run() {\n    helper();\n}\n",
     )?;
 
-    let config = Arc::new(VexpConfig::default());
+    let config = Arc::new(bexpConfig::default());
     let db = Arc::new(Database::open(&config.db_path(workspace.path()))?);
     let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf());
 

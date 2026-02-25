@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::db::{queries, Database};
-use crate::error::{Result, VexpError};
+use crate::error::{bexpError, Result};
 use crate::types::{DetailLevel, Language};
 
 use self::token_counter::TokenCounter;
@@ -27,35 +27,36 @@ impl Skeletonizer {
 
     pub fn skeletonize(&self, file_path: &Path, level: DetailLevel) -> Result<String> {
         // Check cache first
-        let rel_path = file_path
-            .to_string_lossy()
-            .to_string();
+        let rel_path = file_path.to_string_lossy().to_string();
 
         {
             let conn = self.db.reader();
             if let Ok(Some(file)) = queries::get_file_by_path(&conn, &rel_path) {
                 let cached = match level {
-                    DetailLevel::Minimal => {
-                        conn.query_row(
+                    DetailLevel::Minimal => conn
+                        .query_row(
                             "SELECT skeleton_minimal FROM files WHERE id = ?1",
                             rusqlite::params![file.id],
                             |row| row.get::<_, Option<String>>(0),
-                        ).ok().flatten()
-                    }
-                    DetailLevel::Standard => {
-                        conn.query_row(
+                        )
+                        .ok()
+                        .flatten(),
+                    DetailLevel::Standard => conn
+                        .query_row(
                             "SELECT skeleton_standard FROM files WHERE id = ?1",
                             rusqlite::params![file.id],
                             |row| row.get::<_, Option<String>>(0),
-                        ).ok().flatten()
-                    }
-                    DetailLevel::Detailed => {
-                        conn.query_row(
+                        )
+                        .ok()
+                        .flatten(),
+                    DetailLevel::Detailed => conn
+                        .query_row(
                             "SELECT skeleton_detailed FROM files WHERE id = ?1",
                             rusqlite::params![file.id],
                             |row| row.get::<_, Option<String>>(0),
-                        ).ok().flatten()
-                    }
+                        )
+                        .ok()
+                        .flatten(),
                 };
 
                 if let Some(skeleton) = cached {
@@ -66,14 +67,11 @@ impl Skeletonizer {
 
         // Generate skeleton
         let source = std::fs::read_to_string(file_path)
-            .map_err(|e| VexpError::Skeleton(format!("Cannot read file: {e}")))?;
+            .map_err(|e| bexpError::Skeleton(format!("Cannot read file: {e}")))?;
 
-        let ext = file_path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
         let lang = Language::from_extension(ext)
-            .ok_or_else(|| VexpError::Skeleton(format!("Unsupported language: {ext}")))?;
+            .ok_or_else(|| bexpError::Skeleton(format!("Unsupported language: {ext}")))?;
 
         let skeleton = SkeletonTransformer::transform(&source, lang, level)?;
 
@@ -83,14 +81,25 @@ impl Skeletonizer {
             if let Ok(Some(file)) = queries::get_file_by_path(&reader, &rel_path) {
                 let tokens = self.token_counter.count(&skeleton) as i64;
                 let conn = self.db.writer();
-                let _ = queries::update_file_skeleton(&conn, file.id, level.as_str(), &skeleton, tokens);
+                let _ = queries::update_file_skeleton(
+                    &conn,
+                    file.id,
+                    level.as_str(),
+                    &skeleton,
+                    tokens,
+                );
             }
         }
 
         Ok(skeleton)
     }
 
-    pub fn skeletonize_source(&self, source: &str, lang: Language, level: DetailLevel) -> Result<String> {
+    pub fn skeletonize_source(
+        &self,
+        source: &str,
+        lang: Language,
+        level: DetailLevel,
+    ) -> Result<String> {
         SkeletonTransformer::transform(source, lang, level)
     }
 

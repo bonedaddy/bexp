@@ -2,16 +2,16 @@ use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
 
-use crate::config::VexpConfig;
+use crate::config::bexpConfig;
 use crate::error::Result;
 use crate::types::Language;
 
 pub struct Scanner<'a> {
-    config: &'a VexpConfig,
+    config: &'a bexpConfig,
 }
 
 impl<'a> Scanner<'a> {
-    pub fn new(config: &'a VexpConfig) -> Self {
+    pub fn new(config: &'a bexpConfig) -> Self {
         Self { config }
     }
 

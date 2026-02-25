@@ -1,9 +1,9 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::db::queries;
-use crate::mcp::server::VexpServer;
+use crate::mcp::server::bexpServer;
 
-pub async fn handle(server: &VexpServer) -> Result<CallToolResult, ErrorData> {
+pub async fn handle(server: &bexpServer) -> Result<CallToolResult, ErrorData> {
     let stats = {
         let reader = server.db.reader();
         queries::get_index_stats(&reader).map_err(|e| ErrorData::internal_error(e.to_string(), None))?
@@ -12,7 +12,7 @@ pub async fn handle(server: &VexpServer) -> Result<CallToolResult, ErrorData> {
     let watcher_active = server.indexer.watcher_active();
 
     let mut output = String::new();
-    output.push_str("# Vexp Index Status\n\n");
+    output.push_str("# bexp Index Status\n\n");
     output.push_str(&format!("- **Files indexed:** {}\n", stats.file_count));
     output.push_str(&format!("- **Symbols (nodes):** {}\n", stats.node_count));
     output.push_str(&format!("- **Edges:** {}\n", stats.edge_count));

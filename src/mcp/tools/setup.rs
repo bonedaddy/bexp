@@ -1,18 +1,18 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
-use crate::mcp::server::{SetupParams, VexpServer};
+use crate::mcp::server::{SetupParams, bexpServer};
 
 pub async fn handle(
-    server: &VexpServer,
+    server: &bexpServer,
     params: SetupParams,
 ) -> Result<CallToolResult, ErrorData> {
-    let vexp_dir = server.workspace_root.join(".vexp");
-    let config_path = vexp_dir.join("config.toml");
+    let bexp_dir = server.workspace_root.join(".bexp");
+    let config_path = bexp_dir.join("config.toml");
     let force = params.force.unwrap_or(false);
 
     if config_path.exists() && !force {
         return Ok(CallToolResult::success(vec![Content::text(
-            "`.vexp/config.toml` already exists. Use `force: true` to regenerate.",
+            "`.bexp/config.toml` already exists. Use `force: true` to regenerate.",
         )]));
     }
 
@@ -21,14 +21,14 @@ pub async fn handle(
 
     let config_content = generate_config(&project_type);
 
-    std::fs::create_dir_all(&vexp_dir)
-        .map_err(|e| ErrorData::internal_error(format!("Failed to create .vexp dir: {e}"), None))?;
+    std::fs::create_dir_all(&bexp_dir)
+        .map_err(|e| ErrorData::internal_error(format!("Failed to create .bexp dir: {e}"), None))?;
 
     std::fs::write(&config_path, &config_content)
         .map_err(|e| ErrorData::internal_error(format!("Failed to write config: {e}"), None))?;
 
-    // Create .gitignore for .vexp
-    let gitignore_path = vexp_dir.join(".gitignore");
+    // Create .gitignore for .bexp
+    let gitignore_path = bexp_dir.join(".gitignore");
     if !gitignore_path.exists() || force {
         std::fs::write(&gitignore_path, "index.db\nindex.db-wal\nindex.db-shm\n")
             .map_err(|e| {
@@ -40,8 +40,8 @@ pub async fn handle(
     output.push_str("# Workspace Setup Complete\n\n");
     output.push_str(&format!("**Detected project type:** {}\n\n", project_type.name));
     output.push_str("**Created files:**\n");
-    output.push_str("- `.vexp/config.toml`\n");
-    output.push_str("- `.vexp/.gitignore`\n\n");
+    output.push_str("- `.bexp/config.toml`\n");
+    output.push_str("- `.bexp/.gitignore`\n\n");
     output.push_str("**Configuration:**\n");
     output.push_str(&format!("```toml\n{}\n```\n", config_content));
 
@@ -109,7 +109,7 @@ fn detect_project_type(root: &std::path::Path) -> ProjectType {
 
 fn generate_config(project_type: &ProjectType) -> String {
     let mut config = String::new();
-    config.push_str("# Vexp Configuration\n");
+    config.push_str("# bexp Configuration\n");
     config.push_str(&format!("# Detected project type: {}\n\n", project_type.name));
     config.push_str("token_budget = 8000\n");
     config.push_str("default_skeleton_level = \"standard\"\n");
@@ -118,12 +118,12 @@ fn generate_config(project_type: &ProjectType) -> String {
     config.push_str("memory_budget_pct = 0.10\n");
     config.push_str("session_compress_after_hours = 2\n");
     config.push_str("observation_ttl_days = 90\n");
-    config.push_str("db_path = \".vexp/index.db\"\n\n");
+    config.push_str("db_path = \".bexp/index.db\"\n\n");
 
     let mut excludes: Vec<String> = vec![
         "node_modules", ".git", "target", "dist", "build",
         "__pycache__", ".venv", "venv", ".next", ".nuxt",
-        "vendor", ".vexp",
+        "vendor", ".bexp",
     ]
     .into_iter()
     .map(String::from)

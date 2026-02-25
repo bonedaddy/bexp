@@ -6,7 +6,7 @@ pub mod search;
 
 use std::sync::Arc;
 
-use crate::config::VexpConfig;
+use crate::config::bexpConfig;
 use crate::db::{queries, Database};
 use crate::error::Result;
 use crate::graph::GraphEngine;
@@ -17,7 +17,7 @@ use cache::CapsuleCache;
 
 pub struct CapsuleGenerator {
     db: Arc<Database>,
-    config: Arc<VexpConfig>,
+    config: Arc<bexpConfig>,
     graph: Arc<GraphEngine>,
     skeletonizer: Arc<Skeletonizer>,
     memory: Arc<MemoryService>,
@@ -27,7 +27,7 @@ pub struct CapsuleGenerator {
 impl CapsuleGenerator {
     pub fn new(
         db: Arc<Database>,
-        config: Arc<VexpConfig>,
+        config: Arc<bexpConfig>,
         graph: Arc<GraphEngine>,
         skeletonizer: Arc<Skeletonizer>,
         memory: Arc<MemoryService>,

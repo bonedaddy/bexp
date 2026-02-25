@@ -1,4 +1,4 @@
-use crate::error::{Result, VexpError};
+use crate::error::{bexpError, Result};
 use crate::types::{DetailLevel, Language};
 
 pub struct SkeletonTransformer;
@@ -17,13 +17,13 @@ impl SkeletonTransformer {
             Language::Cpp => tree_sitter_cpp::LANGUAGE.into(),
         };
 
-        parser.set_language(&ts_language).map_err(|e| {
-            VexpError::Skeleton(format!("Language setup failed: {e}"))
-        })?;
+        parser
+            .set_language(&ts_language)
+            .map_err(|e| bexpError::Skeleton(format!("Language setup failed: {e}")))?;
 
-        let tree = parser.parse(source, None).ok_or_else(|| {
-            VexpError::Skeleton("Parse returned None".to_string())
-        })?;
+        let tree = parser
+            .parse(source, None)
+            .ok_or_else(|| bexpError::Skeleton("Parse returned None".to_string()))?;
 
         let rules = super::languages::get_rules(lang);
         let skeleton = transform_node(tree.root_node(), source, level, &rules, 0);
@@ -186,8 +186,7 @@ fn collapse_body_detailed(
             let child_kind = child.kind();
             if rules.should_collapse_body(child_kind, DetailLevel::Minimal) {
                 // Collapse nested bodies
-                if let Some(collapsed) =
-                    collapse_body(child, source, DetailLevel::Standard, rules)
+                if let Some(collapsed) = collapse_body(child, source, DetailLevel::Standard, rules)
                 {
                     result.push_str(&collapsed);
                 } else {

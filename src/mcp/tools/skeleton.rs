@@ -1,10 +1,10 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
-use crate::mcp::server::{SkeletonParams, VexpServer};
+use crate::mcp::server::{SkeletonParams, bexpServer};
 use crate::types::DetailLevel;
 
 pub async fn handle(
-    server: &VexpServer,
+    server: &bexpServer,
     params: SkeletonParams,
 ) -> Result<CallToolResult, ErrorData> {
     if let Some(result) = super::wait_for_index(&server.indexer).await {

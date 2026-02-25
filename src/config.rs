@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::error::{Result, VexpError};
+use crate::error::{bexpError, Result};
 use crate::types::DetailLevel;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,7 +13,7 @@ pub struct LspServerConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VexpConfig {
+pub struct bexpConfig {
     #[serde(default = "default_token_budget")]
     pub token_budget: usize,
 
@@ -58,7 +58,7 @@ fn default_skeleton_level() -> DetailLevel {
     DetailLevel::Standard
 }
 fn default_db_path() -> String {
-    ".vexp/index.db".to_string()
+    ".bexp/index.db".to_string()
 }
 fn default_max_file_size() -> usize {
     1_000_000
@@ -76,7 +76,7 @@ fn default_observation_ttl_days() -> u64 {
     90
 }
 
-impl Default for VexpConfig {
+impl Default for bexpConfig {
     fn default() -> Self {
         Self {
             token_budget: default_token_budget(),
@@ -108,16 +108,16 @@ fn default_excludes() -> Vec<String> {
         ".next".into(),
         ".nuxt".into(),
         "vendor".into(),
-        ".vexp".into(),
+        ".bexp".into(),
     ]
 }
 
-impl VexpConfig {
+impl bexpConfig {
     pub fn load(workspace_root: &Path) -> Result<Self> {
-        let config_path = workspace_root.join(".vexp/config.toml");
+        let config_path = workspace_root.join(".bexp/config.toml");
         if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)
-                .map_err(|e| VexpError::Config(format!("Failed to read config: {e}")))?;
+                .map_err(|e| bexpError::Config(format!("Failed to read config: {e}")))?;
             let config: Self = toml::from_str(&content)?;
             Ok(config)
         } else {
@@ -158,10 +158,8 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .expect("clock went backwards")
                 .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "{prefix}-{}-{unique}",
-                std::process::id()
-            ));
+            let path =
+                std::env::temp_dir().join(format!("{prefix}-{}-{unique}", std::process::id()));
             fs::create_dir_all(&path)?;
             Ok(Self { path })
         }
@@ -179,24 +177,24 @@ mod tests {
 
     #[test]
     fn load_defaults_when_config_file_is_missing() {
-        let workspace = TempDir::new("vexp-config-defaults").unwrap();
+        let workspace = TempDir::new("bexp-config-defaults").unwrap();
 
-        let config = VexpConfig::load(workspace.path()).unwrap();
+        let config = bexpConfig::load(workspace.path()).unwrap();
 
         assert_eq!(config.token_budget, 8000);
         assert_eq!(config.default_skeleton_level, DetailLevel::Standard);
         assert!(config.exclude_patterns.iter().any(|p| p == "node_modules"));
-        assert!(config.exclude_patterns.iter().any(|p| p == ".vexp"));
-        assert_eq!(config.db_path, ".vexp/index.db");
+        assert!(config.exclude_patterns.iter().any(|p| p == ".bexp"));
+        assert_eq!(config.db_path, ".bexp/index.db");
     }
 
     #[test]
     fn load_applies_values_from_toml_file() {
-        let workspace = TempDir::new("vexp-config-load").unwrap();
-        let vexp_dir = workspace.path().join(".vexp");
-        fs::create_dir_all(&vexp_dir).unwrap();
+        let workspace = TempDir::new("bexp-config-load").unwrap();
+        let bexp_dir = workspace.path().join(".bexp");
+        fs::create_dir_all(&bexp_dir).unwrap();
         fs::write(
-            vexp_dir.join("config.toml"),
+            bexp_dir.join("config.toml"),
             r#"
 token_budget = 1234
 default_skeleton_level = "minimal"
@@ -211,7 +209,7 @@ observation_ttl_days = 30
         )
         .unwrap();
 
-        let config = VexpConfig::load(workspace.path()).unwrap();
+        let config = bexpConfig::load(workspace.path()).unwrap();
 
         assert_eq!(config.token_budget, 1234);
         assert_eq!(config.default_skeleton_level, DetailLevel::Minimal);
@@ -229,10 +227,10 @@ observation_ttl_days = 30
 
     #[test]
     fn is_excluded_checks_path_components() {
-        let config = VexpConfig::default();
+        let config = bexpConfig::default();
 
         assert!(config.is_excluded(Path::new("src/node_modules/pkg/index.ts")));
-        assert!(config.is_excluded(Path::new(".vexp/index.db")));
+        assert!(config.is_excluded(Path::new(".bexp/index.db")));
         assert!(!config.is_excluded(Path::new("src/.github/workflows/ci.yml")));
         assert!(!config.is_excluded(Path::new("src/module/git_utils.rs")));
     }

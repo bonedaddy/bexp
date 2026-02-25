@@ -1,10 +1,10 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::db::queries;
-use crate::mcp::server::{ListSessionsParams, VexpServer};
+use crate::mcp::server::{ListSessionsParams, bexpServer};
 
 pub async fn handle(
-    server: &VexpServer,
+    server: &bexpServer,
     params: ListSessionsParams,
 ) -> Result<CallToolResult, ErrorData> {
     let limit = params.limit.unwrap_or(20);

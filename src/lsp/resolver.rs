@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use rusqlite::{params, Connection};
 
-use crate::config::VexpConfig;
+use crate::config::bexpConfig;
 use crate::db::Database;
 use crate::error::Result;
 use crate::graph::GraphEngine;
@@ -27,7 +27,7 @@ struct UnresolvedRefInfo {
 /// Returns the number of edges created.
 pub fn resolve_via_lsp(
     db: &Arc<Database>,
-    config: &VexpConfig,
+    config: &bexpConfig,
     graph: &Arc<GraphEngine>,
     workspace_root: &Path,
 ) -> Result<usize> {

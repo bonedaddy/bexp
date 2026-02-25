@@ -1,9 +1,9 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
-use crate::mcp::server::{ObserveParams, VexpServer};
+use crate::mcp::server::{ObserveParams, bexpServer};
 
 pub async fn handle(
-    server: &VexpServer,
+    server: &bexpServer,
     params: ObserveParams,
 ) -> Result<CallToolResult, ErrorData> {
     let result = server

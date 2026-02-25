@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 use rusqlite::Connection;
 
-use crate::error::{Result, VexpError};
+use crate::error::{Result, bexpError};
 
 /// Number of reader connections in the pool, allowing concurrent read access.
 const READER_POOL_SIZE: usize = 4;
@@ -95,7 +95,7 @@ impl Database {
     fn apply_schema(conn: &mut Connection) -> Result<()> {
         schema::migrations()
             .to_latest(conn)
-            .map_err(|e| VexpError::Migration(format!("Migration failed: {e}")))?;
+            .map_err(|e| bexpError::Migration(format!("Migration failed: {e}")))?;
         Ok(())
     }
 

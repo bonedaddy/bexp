@@ -10,7 +10,7 @@ use petgraph::Direction;
 use rusqlite::Connection;
 
 use crate::db::queries;
-use crate::error::{Result, VexpError};
+use crate::error::{Result, bexpError};
 use crate::types::{EdgeKind, NodeKind};
 
 #[derive(Debug, Clone)]
@@ -55,9 +55,9 @@ impl GraphEngine {
 
         let pagerank = centrality::compute_pagerank(&graph, 0.85, 20, 1e-6);
 
-        *self.graph.write().map_err(|_| VexpError::Graph("lock poisoned".into()))? = graph;
-        *self.id_to_index.write().map_err(|_| VexpError::Graph("lock poisoned".into()))? = id_map;
-        *self.pagerank.write().map_err(|_| VexpError::Graph("lock poisoned".into()))? = pagerank;
+        *self.graph.write().map_err(|_| bexpError::Graph("lock poisoned".into()))? = graph;
+        *self.id_to_index.write().map_err(|_| bexpError::Graph("lock poisoned".into()))? = id_map;
+        *self.pagerank.write().map_err(|_| bexpError::Graph("lock poisoned".into()))? = pagerank;
 
         Ok(())
     }
@@ -97,7 +97,7 @@ impl GraphEngine {
         depth: usize,
         edge_kinds: Option<&[String]>,
     ) -> Result<String> {
-        let graph = self.graph.read().map_err(|_| VexpError::Graph("lock poisoned".into()))?;
+        let graph = self.graph.read().map_err(|_| bexpError::Graph("lock poisoned".into()))?;
 
         // Find the node
         let node_idx = graph
@@ -107,7 +107,7 @@ impl GraphEngine {
                 node.name == symbol
                     || node.qualified_name.as_deref() == Some(symbol)
             })
-            .ok_or_else(|| VexpError::NotFound(format!("Symbol not found: {}", symbol)))?;
+            .ok_or_else(|| bexpError::NotFound(format!("Symbol not found: {}", symbol)))?;
 
         let result = match direction {
             "callers" => traversal::get_callers(&graph, node_idx, depth, edge_kinds),
@@ -118,14 +118,14 @@ impl GraphEngine {
                 result.push_str(&traversal::get_callees(&graph, node_idx, depth, edge_kinds));
                 result
             }
-            _ => return Err(VexpError::Graph(format!("Invalid direction: {}", direction))),
+            _ => return Err(bexpError::Graph(format!("Invalid direction: {}", direction))),
         };
 
         Ok(result)
     }
 
     pub fn find_paths(&self, from: &str, to: &str, max_depth: usize) -> Result<String> {
-        let graph = self.graph.read().map_err(|_| VexpError::Graph("lock poisoned".into()))?;
+        let graph = self.graph.read().map_err(|_| bexpError::Graph("lock poisoned".into()))?;
 
         let from_idx = graph
             .node_indices()
@@ -133,7 +133,7 @@ impl GraphEngine {
                 let node = &graph[idx];
                 node.name == from || node.qualified_name.as_deref() == Some(from)
             })
-            .ok_or_else(|| VexpError::NotFound(format!("Source symbol not found: {}", from)))?;
+            .ok_or_else(|| bexpError::NotFound(format!("Source symbol not found: {}", from)))?;
 
         let to_idx = graph
             .node_indices()
@@ -141,7 +141,7 @@ impl GraphEngine {
                 let node = &graph[idx];
                 node.name == to || node.qualified_name.as_deref() == Some(to)
             })
-            .ok_or_else(|| VexpError::NotFound(format!("Target symbol not found: {}", to)))?;
+            .ok_or_else(|| bexpError::NotFound(format!("Target symbol not found: {}", to)))?;
 
         let paths = traversal::find_all_paths(&graph, from_idx, to_idx, max_depth);
 
@@ -312,8 +312,8 @@ impl GraphEngine {
             return self.build_from_db(conn);
         }
 
-        let mut graph = self.graph.write().map_err(|_| VexpError::Graph("lock poisoned".into()))?;
-        let mut id_map = self.id_to_index.write().map_err(|_| VexpError::Graph("lock poisoned".into()))?;
+        let mut graph = self.graph.write().map_err(|_| bexpError::Graph("lock poisoned".into()))?;
+        let mut id_map = self.id_to_index.write().map_err(|_| bexpError::Graph("lock poisoned".into()))?;
 
         // Collect indices to remove: all nodes belonging to changed files
         let changed_file_set: HashSet<i64> = changed_file_ids.iter().copied().collect();
@@ -377,10 +377,10 @@ impl GraphEngine {
         drop(id_map);
 
         // Recompute PageRank (global property, must be full)
-        let graph_ref = self.graph.read().map_err(|_| VexpError::Graph("lock poisoned".into()))?;
+        let graph_ref = self.graph.read().map_err(|_| bexpError::Graph("lock poisoned".into()))?;
         let pagerank = centrality::compute_pagerank(&graph_ref, 0.85, 20, 1e-6);
         drop(graph_ref);
-        *self.pagerank.write().map_err(|_| VexpError::Graph("lock poisoned".into()))? = pagerank;
+        *self.pagerank.write().map_err(|_| bexpError::Graph("lock poisoned".into()))? = pagerank;
 
         tracing::info!(
             "Incremental graph update: removed {} old nodes, added {} new nodes",

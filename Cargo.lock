@@ -118,6 +118,45 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "bexp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "crossbeam-channel",
+ "globset",
+ "lsp-types",
+ "notify",
+ "notify-debouncer-mini",
+ "petgraph",
+ "rayon",
+ "rmcp",
+ "rusqlite",
+ "rusqlite_migration",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tiktoken-rs",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "tree-sitter",
+ "tree-sitter-c",
+ "tree-sitter-cpp",
+ "tree-sitter-html",
+ "tree-sitter-javascript",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+ "uuid",
+ "walkdir",
+ "xxhash-rust",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1649,45 +1688,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "vexp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "crossbeam-channel",
- "globset",
- "lsp-types",
- "notify",
- "notify-debouncer-mini",
- "petgraph",
- "rayon",
- "rmcp",
- "rusqlite",
- "rusqlite_migration",
- "schemars",
- "serde",
- "serde_json",
- "thiserror",
- "tiktoken-rs",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "tree-sitter",
- "tree-sitter-c",
- "tree-sitter-cpp",
- "tree-sitter-html",
- "tree-sitter-javascript",
- "tree-sitter-python",
- "tree-sitter-rust",
- "tree-sitter-typescript",
- "uuid",
- "walkdir",
- "xxhash-rust",
-]
 
 [[package]]
 name = "walkdir"

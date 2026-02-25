@@ -19,16 +19,20 @@ mod skeleton;
 mod types;
 mod workspace;
 
-use config::VexpConfig;
+use config::bexpConfig;
 use db::Database;
 use graph::GraphEngine;
 use indexer::IndexerService;
-use mcp::server::VexpServer;
+use mcp::server::bexpServer;
 use memory::MemoryService;
 use skeleton::Skeletonizer;
 
 #[derive(Parser)]
-#[command(name = "vexp", version, about = "Local-first context engine for AI coding agents")]
+#[command(
+    name = "bexp",
+    version,
+    about = "Local-first context engine for AI coding agents"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -74,26 +78,26 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Serve { workspace } => {
-            let workspace_root = workspace
-                .unwrap_or_else(|| std::env::current_dir().expect("Cannot get cwd"));
+            let workspace_root =
+                workspace.unwrap_or_else(|| std::env::current_dir().expect("Cannot get cwd"));
             serve(workspace_root).await?;
         }
         Commands::Index { workspace } => {
-            let workspace_root = workspace
-                .unwrap_or_else(|| std::env::current_dir().expect("Cannot get cwd"));
+            let workspace_root =
+                workspace.unwrap_or_else(|| std::env::current_dir().expect("Cannot get cwd"));
             index_workspace(&workspace_root)?;
         }
         Commands::FlushWal { workspace } => {
-            let workspace_root = workspace
-                .unwrap_or_else(|| std::env::current_dir().expect("Cannot get cwd"));
-            let config = VexpConfig::load(&workspace_root)?;
+            let workspace_root =
+                workspace.unwrap_or_else(|| std::env::current_dir().expect("Cannot get cwd"));
+            let config = bexpConfig::load(&workspace_root)?;
             let db = Database::open(&config.db_path(&workspace_root))?;
             db.flush_wal()?;
             eprintln!("WAL flushed.");
         }
         Commands::Reindex { workspace } => {
-            let workspace_root = workspace
-                .unwrap_or_else(|| std::env::current_dir().expect("Cannot get cwd"));
+            let workspace_root =
+                workspace.unwrap_or_else(|| std::env::current_dir().expect("Cannot get cwd"));
             index_workspace(&workspace_root)?;
         }
     }
@@ -102,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn index_workspace(workspace_root: &std::path::Path) -> anyhow::Result<()> {
-    let config = Arc::new(VexpConfig::load(workspace_root)?);
+    let config = Arc::new(bexpConfig::load(workspace_root)?);
     let db = Arc::new(Database::open(&config.db_path(workspace_root))?);
     let indexer = IndexerService::new(db.clone(), config.clone(), workspace_root.to_path_buf());
 
@@ -116,9 +120,9 @@ fn index_workspace(workspace_root: &std::path::Path) -> anyhow::Result<()> {
 }
 
 async fn serve(workspace_root: PathBuf) -> anyhow::Result<()> {
-    tracing::info!("Starting vexp server for {}", workspace_root.display());
+    tracing::info!("Starting bexp server for {}", workspace_root.display());
 
-    let config = Arc::new(VexpConfig::load(&workspace_root)?);
+    let config = Arc::new(bexpConfig::load(&workspace_root)?);
     let db = Arc::new(Database::open(&config.db_path(&workspace_root))?);
 
     // Build services
@@ -212,7 +216,7 @@ async fn serve(workspace_root: PathBuf) -> anyhow::Result<()> {
     });
 
     // Create MCP server
-    let server = VexpServer::new(
+    let server = bexpServer::new(
         db.clone(),
         config.clone(),
         indexer.clone(),

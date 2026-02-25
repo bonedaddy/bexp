@@ -1,11 +1,11 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
-use crate::mcp::server::VexpServer;
+use crate::mcp::server::bexpServer;
 
-pub async fn handle(server: &VexpServer) -> Result<CallToolResult, ErrorData> {
+pub async fn handle(server: &bexpServer) -> Result<CallToolResult, ErrorData> {
     let config = &server.config;
 
-    let mut output = String::from("# Vexp Configuration\n\n");
+    let mut output = String::from("# bexp Configuration\n\n");
     output.push_str(&format!("- **Token budget:** {}\n", config.token_budget));
     output.push_str(&format!(
         "- **Default skeleton level:** {}\n",

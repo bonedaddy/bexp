@@ -1,11 +1,11 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::db::queries;
-use crate::mcp::server::{LspEdgesParams, VexpServer};
+use crate::mcp::server::{LspEdgesParams, bexpServer};
 use crate::types::EdgeKind;
 
 pub async fn handle(
-    server: &VexpServer,
+    server: &bexpServer,
     params: LspEdgesParams,
 ) -> Result<CallToolResult, ErrorData> {
     if let Some(result) = super::wait_for_index(&server.indexer).await {
