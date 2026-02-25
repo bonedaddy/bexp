@@ -39,7 +39,7 @@ impl NodeKind {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "function" => Some(Self::Function),
             "method" => Some(Self::Method),
@@ -83,7 +83,7 @@ impl EdgeKind {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "calls" => Some(Self::Calls),
             "imports" => Some(Self::Imports),
@@ -113,7 +113,7 @@ impl DetailLevel {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "minimal" => Some(Self::Minimal),
             "standard" => Some(Self::Standard),
@@ -218,10 +218,10 @@ mod tests {
         ];
 
         for kind in all {
-            assert_eq!(NodeKind::from_str(kind.as_str()), Some(kind));
+            assert_eq!(NodeKind::parse(kind.as_str()), Some(kind));
         }
 
-        assert_eq!(NodeKind::from_str("not_a_kind"), None);
+        assert_eq!(NodeKind::parse("not_a_kind"), None);
     }
 
     #[test]
@@ -236,10 +236,10 @@ mod tests {
         ];
 
         for kind in all {
-            assert_eq!(EdgeKind::from_str(kind.as_str()), Some(kind));
+            assert_eq!(EdgeKind::parse(kind.as_str()), Some(kind));
         }
 
-        assert_eq!(EdgeKind::from_str("not_an_edge"), None);
+        assert_eq!(EdgeKind::parse("not_an_edge"), None);
     }
 
     #[test]
@@ -247,9 +247,9 @@ mod tests {
         let all = [DetailLevel::Minimal, DetailLevel::Standard, DetailLevel::Detailed];
 
         for level in all {
-            assert_eq!(DetailLevel::from_str(level.as_str()), Some(level));
+            assert_eq!(DetailLevel::parse(level.as_str()), Some(level));
         }
 
-        assert_eq!(DetailLevel::from_str("unknown"), None);
+        assert_eq!(DetailLevel::parse("unknown"), None);
     }
 }

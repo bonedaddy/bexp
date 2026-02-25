@@ -94,6 +94,7 @@ fn extract_from_node(
                     col_end: node.end_position().column,
                     visibility: None,
                     is_export: false,
+            metadata: None,
                 });
                 unresolved_refs.push(UnresolvedRef {
                     source_idx: idx,
@@ -101,6 +102,7 @@ fn extract_from_node(
                     target_qualified_name: None,
                     edge_kind: EdgeKind::Imports,
                     import_path: None,
+            context: None,
                 });
             }
         }
@@ -117,6 +119,7 @@ fn extract_from_node(
                 col_end: node.end_position().column,
                 visibility: None,
                 is_export: false,
+            metadata: None,
             });
         }
         "element" => {
@@ -136,6 +139,7 @@ fn extract_from_node(
                             col_end: node.end_position().column,
                             visibility: None,
                             is_export: false,
+            metadata: None,
                         });
                         unresolved_refs.push(UnresolvedRef {
                             source_idx: idx,
@@ -143,6 +147,7 @@ fn extract_from_node(
                             target_qualified_name: None,
                             edge_kind: EdgeKind::Imports,
                             import_path: None,
+            context: None,
                         });
                     }
                 }

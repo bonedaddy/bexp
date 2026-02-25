@@ -14,10 +14,12 @@ mod error;
 mod git;
 mod graph;
 mod indexer;
+mod lsp;
 mod mcp;
 mod memory;
 mod skeleton;
 mod types;
+mod workspace;
 
 use config::VexpConfig;
 use db::Database;
@@ -158,6 +160,8 @@ async fn serve(workspace_root: PathBuf) -> anyhow::Result<()> {
     let startup_indexer = indexer.clone();
     let startup_graph = graph.clone();
     let startup_db = db.clone();
+    let startup_config = config.clone();
+    let startup_workspace = workspace_root.clone();
     tokio::task::spawn_blocking(move || {
         tracing::info!("Running initial index in background...");
         match startup_indexer.full_index() {
@@ -178,9 +182,33 @@ async fn serve(workspace_root: PathBuf) -> anyhow::Result<()> {
                         startup_graph.edge_count()
                     );
                 }
+
+                // Mark index as ready
+                startup_indexer.set_index_ready(true);
+
+                // Run LSP resolution if enabled
+                if startup_config.lsp_resolution {
+                    match lsp::resolver::resolve_via_lsp(
+                        &startup_db,
+                        &startup_config,
+                        &startup_graph,
+                        &startup_workspace,
+                    ) {
+                        Ok(resolved) => {
+                            if resolved > 0 {
+                                tracing::info!("LSP resolution: {} edges created", resolved);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("LSP resolution failed: {}", e);
+                        }
+                    }
+                }
             }
             Err(e) => {
                 tracing::error!("Initial index failed: {}", e);
+                // Mark ready even on failure so tools don't hang forever
+                startup_indexer.set_index_ready(true);
             }
         }
     });

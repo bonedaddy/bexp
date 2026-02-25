@@ -12,7 +12,7 @@ pub async fn handle(server: &VexpServer) -> Result<CallToolResult, ErrorData> {
     let watcher_active = server.indexer.watcher_active();
 
     let mut output = String::new();
-    output.push_str(&format!("# Vexp Index Status\n\n"));
+    output.push_str("# Vexp Index Status\n\n");
     output.push_str(&format!("- **Files indexed:** {}\n", stats.file_count));
     output.push_str(&format!("- **Symbols (nodes):** {}\n", stats.node_count));
     output.push_str(&format!("- **Edges:** {}\n", stats.edge_count));

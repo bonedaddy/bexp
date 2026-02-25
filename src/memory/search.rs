@@ -45,7 +45,8 @@ pub fn search_observations(
          LIMIT ?2",
     )?;
 
-    let raw_results: Vec<(i64, String, Option<String>, Option<String>, String, bool, f64, f64)> = stmt
+    type ObservationRow = (i64, String, Option<String>, Option<String>, String, bool, f64, f64);
+    let raw_results: Vec<ObservationRow> = stmt
         .query_map(params![fts_query, (limit * 3) as i64], |row| {
             Ok((
                 row.get(0)?,

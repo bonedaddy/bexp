@@ -15,29 +15,55 @@ pub fn assemble_capsule(
     let mut output = String::new();
 
     // Header
-    output.push_str(&format!("# Context Capsule\n\n"));
+    output.push_str("# Context Capsule\n\n");
     output.push_str(&format!("**Query:** {}\n", query));
     output.push_str(&format!("**Intent:** {}\n", intent.as_str()));
     output.push_str(&format!(
-        "**Token usage:** ~{} tokens ({} pivot files, {} skeleton files)\n\n",
+        "**Token usage:** ~{} tokens ({} pivot excerpts, {} bridges, {} skeleton files)\n\n",
         allocation.total_tokens,
         allocation.pivots.len(),
+        allocation.bridges.len(),
         allocation.skeletons.len()
     ));
 
-    // Pivot files (full content)
+    // Pivot excerpts
     if !allocation.pivots.is_empty() {
-        output.push_str("---\n\n## Pivot Files (full content)\n\n");
+        output.push_str("---\n\n## Pivot Files\n\n");
         for pivot in &allocation.pivots {
             let ext = std::path::Path::new(&pivot.path)
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or("");
+
+            let location = if pivot.is_full_file {
+                format!("`{}`", pivot.path)
+            } else {
+                format!("`{}` (lines {}-{})", pivot.path, pivot.line_start, pivot.line_end)
+            };
+
+            let names = if pivot.node_names.is_empty() {
+                String::new()
+            } else {
+                format!(" — {}", pivot.node_names.join(", "))
+            };
+
             output.push_str(&format!(
-                "### `{}` ({} tokens, relevance: {:.2})\n\n```{}\n{}\n```\n\n",
-                pivot.path, pivot.tokens, pivot.relevance_score, ext, pivot.content
+                "### {} ({} tokens, relevance: {:.2}){}\n\n```{}\n{}\n```\n\n",
+                location, pivot.tokens, pivot.relevance_score, names, ext, pivot.content
             ));
         }
+    }
+
+    // Bridge context
+    if !allocation.bridges.is_empty() {
+        output.push_str("---\n\n## Bridge Context\n\n");
+        for bridge in &allocation.bridges {
+            output.push_str(&format!(
+                "- `{}` in `{}`: `{}`\n",
+                bridge.node_name, bridge.path, bridge.signature
+            ));
+        }
+        output.push('\n');
     }
 
     // Skeleton files

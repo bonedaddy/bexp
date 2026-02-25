@@ -32,6 +32,7 @@ impl SkeletonTransformer {
     }
 }
 
+#[allow(clippy::only_used_in_recursion)]
 fn transform_node(
     node: tree_sitter::Node,
     source: &str,

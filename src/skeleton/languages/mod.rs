@@ -14,8 +14,7 @@ pub struct SkeletonRules {
 impl SkeletonRules {
     pub fn should_collapse_body(&self, kind: &str, level: DetailLevel) -> bool {
         match level {
-            DetailLevel::Minimal => self.collapsible.iter().any(|&k| k == kind),
-            DetailLevel::Standard => self.collapsible.iter().any(|&k| k == kind),
+            DetailLevel::Minimal | DetailLevel::Standard => self.collapsible.contains(&kind),
             DetailLevel::Detailed => false,
         }
     }
@@ -28,11 +27,11 @@ impl SkeletonRules {
     }
 
     pub fn should_remove(&self, kind: &str) -> bool {
-        self.removable.iter().any(|&k| k == kind)
+        self.removable.contains(&kind)
     }
 
     pub fn is_significant_child(&self, kind: &str) -> bool {
-        self.significant_children.iter().any(|&k| k == kind)
+        self.significant_children.contains(&kind)
     }
 }
 

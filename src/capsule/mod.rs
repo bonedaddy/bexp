@@ -1,4 +1,5 @@
 pub mod budget;
+pub mod cache;
 pub mod generator;
 pub mod intent;
 pub mod search;
@@ -6,11 +7,13 @@ pub mod search;
 use std::sync::Arc;
 
 use crate::config::VexpConfig;
-use crate::db::Database;
+use crate::db::{queries, Database};
 use crate::error::Result;
 use crate::graph::GraphEngine;
 use crate::memory::MemoryService;
 use crate::skeleton::Skeletonizer;
+
+use cache::CapsuleCache;
 
 pub struct CapsuleGenerator {
     db: Arc<Database>,
@@ -18,6 +21,7 @@ pub struct CapsuleGenerator {
     graph: Arc<GraphEngine>,
     skeletonizer: Arc<Skeletonizer>,
     memory: Arc<MemoryService>,
+    cache: CapsuleCache,
 }
 
 impl CapsuleGenerator {
@@ -34,6 +38,7 @@ impl CapsuleGenerator {
             graph,
             skeletonizer,
             memory,
+            cache: CapsuleCache::new(),
         }
     }
 
@@ -57,6 +62,15 @@ impl CapsuleGenerator {
             intent::detect_intent(query)
         };
         tracing::debug!("Detected intent: {:?}", intent);
+
+        // Check cache (only for non-session queries since memory context varies)
+        let generation = queries::get_index_generation(&self.db.reader()).unwrap_or(0);
+        if session_id.is_none() {
+            if let Some(cached) = self.cache.get(query, token_budget, intent.as_str(), generation) {
+                tracing::debug!("Cache hit for query: {}", query);
+                return Ok(cached);
+            }
+        }
 
         // 2. Hybrid search for relevant nodes
         let reader = self.db.reader();
@@ -83,6 +97,7 @@ impl CapsuleGenerator {
             &search_results,
             code_budget,
             self.config.default_skeleton_level,
+            Some(&self.graph),
         )?;
 
         // 5. Assemble capsule
@@ -100,6 +115,11 @@ impl CapsuleGenerator {
                 output.push_str("\n---\n\n# Relevant Observations\n\n");
                 output.push_str(&memory_context);
             }
+        }
+
+        // Cache result (only non-session queries)
+        if session_id.is_none() {
+            self.cache.put(query, token_budget, intent.as_str(), generation, output.clone());
         }
 
         Ok(output)

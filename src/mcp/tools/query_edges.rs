@@ -36,9 +36,10 @@ pub async fn handle(
             .target_qualified_name
             .as_deref()
             .unwrap_or(&edge.target_name);
+        let ctx = edge.context.as_deref().map(|c| format!(" [{}]", c)).unwrap_or_default();
         output.push_str(&format!(
-            "- `{}` —[{}]→ `{}` (confidence: {:.2})\n  {} → {}\n",
-            src, edge.kind, tgt, edge.confidence, edge.source_file, edge.target_file,
+            "- `{}` —[{}]→ `{}` (confidence: {:.2}){}\n  {} → {}\n",
+            src, edge.kind, tgt, edge.confidence, ctx, edge.source_file, edge.target_file,
         ));
     }
 

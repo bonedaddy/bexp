@@ -16,14 +16,14 @@ pub async fn handle(
         let reader = server.db.reader();
 
         for edge in &params.edges {
-            let edge_kind = EdgeKind::from_str(&edge.kind).unwrap_or(EdgeKind::Calls);
+            let edge_kind = EdgeKind::parse(&edge.kind).unwrap_or(EdgeKind::Calls);
 
             let source = find_node_by_qualified_name(&reader, &edge.source_qualified_name);
             let target = find_node_by_qualified_name(&reader, &edge.target_qualified_name);
 
             match (source, target) {
                 (Some(src_id), Some(tgt_id)) => {
-                    if queries::insert_edge(&conn, src_id, tgt_id, edge_kind.as_str(), 0.95).is_ok()
+                    if queries::insert_edge(&conn, src_id, tgt_id, edge_kind.as_str(), 0.95, None).is_ok()
                     {
                         added += 1;
                     }

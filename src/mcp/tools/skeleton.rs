@@ -10,7 +10,7 @@ pub async fn handle(
     let level = params
         .level
         .as_deref()
-        .and_then(DetailLevel::from_str)
+        .and_then(DetailLevel::parse)
         .unwrap_or(server.config.default_skeleton_level);
 
     let file_path = server.workspace_root.join(&params.file_path);

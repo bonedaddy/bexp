@@ -9,6 +9,7 @@ use crate::config::VexpConfig;
 use crate::db::Database;
 use crate::graph::GraphEngine;
 use crate::indexer::IndexerService;
+use crate::types::Language;
 
 pub struct FileWatcher {
     _debouncer: notify_debouncer_mini::Debouncer<notify::RecommendedWatcher>,
@@ -51,6 +52,12 @@ impl FileWatcher {
                                 let rel = p.strip_prefix(&root_clone).unwrap_or(p);
                                 !config_clone.is_excluded(rel)
                             })
+                            .filter(|p| {
+                                p.extension()
+                                    .and_then(|e| e.to_str())
+                                    .and_then(Language::from_extension)
+                                    .is_some()
+                            })
                             .collect();
 
                         if !paths.is_empty() {
@@ -77,9 +84,12 @@ impl FileWatcher {
                             report.node_count,
                             report.edge_count
                         );
-                        // Rebuild graph
-                        if let Err(e) = graph.rebuild_from_db(&db.reader()) {
-                            tracing::error!("Graph rebuild failed: {}", e);
+                        // Incremental graph update instead of full rebuild
+                        if !report.changed_file_ids.is_empty() {
+                            let reader = db.reader();
+                            if let Err(e) = graph.incremental_update(&reader, &report.changed_file_ids) {
+                                tracing::error!("Incremental graph update failed: {}", e);
+                            }
                         }
                     }
                     Err(e) => {

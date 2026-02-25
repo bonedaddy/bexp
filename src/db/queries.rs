@@ -28,6 +28,7 @@ pub struct NodeRecord {
     pub col_end: i64,
     pub visibility: Option<String>,
     pub is_export: bool,
+    pub metadata: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +38,7 @@ pub struct EdgeRecord {
     pub target_node_id: i64,
     pub kind: String,
     pub confidence: f64,
+    pub context: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -139,6 +141,7 @@ pub fn delete_file_data(conn: &Connection, file_id: i64) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn insert_node(
     conn: &Connection,
     file_id: i64,
@@ -153,14 +156,21 @@ pub fn insert_node(
     col_end: i64,
     visibility: Option<&str>,
     is_export: bool,
+    metadata: Option<&str>,
 ) -> Result<i64> {
+    use crate::db::tokenizer::tokenize_identifier;
+    let tokenized_name = tokenize_identifier(name);
+    let tokenized_qname = qualified_name.map(tokenize_identifier);
+
     conn.execute(
         "INSERT INTO nodes (file_id, kind, name, qualified_name, signature, docstring,
-                           line_start, line_end, col_start, col_end, visibility, is_export)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                           line_start, line_end, col_start, col_end, visibility, is_export,
+                           tokenized_name, tokenized_qualified_name, metadata)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
             file_id, kind, name, qualified_name, signature, docstring,
             line_start, line_end, col_start, col_end, visibility, is_export as i32,
+            tokenized_name, tokenized_qname, metadata,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -172,11 +182,12 @@ pub fn insert_edge(
     target_node_id: i64,
     kind: &str,
     confidence: f64,
+    context: Option<&str>,
 ) -> Result<i64> {
     conn.execute(
-        "INSERT INTO edges (source_node_id, target_node_id, kind, confidence)
-         VALUES (?1, ?2, ?3, ?4)",
-        params![source_node_id, target_node_id, kind, confidence],
+        "INSERT INTO edges (source_node_id, target_node_id, kind, confidence, context)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![source_node_id, target_node_id, kind, confidence, context],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -188,11 +199,12 @@ pub fn insert_unresolved_ref(
     target_qualified_name: Option<&str>,
     edge_kind: &str,
     import_path: Option<&str>,
+    context: Option<&str>,
 ) -> Result<i64> {
     conn.execute(
-        "INSERT INTO unresolved_refs (source_node_id, target_name, target_qualified_name, edge_kind, import_path)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![source_node_id, target_name, target_qualified_name, edge_kind, import_path],
+        "INSERT INTO unresolved_refs (source_node_id, target_name, target_qualified_name, edge_kind, import_path, context)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![source_node_id, target_name, target_qualified_name, edge_kind, import_path, context],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -200,7 +212,7 @@ pub fn insert_unresolved_ref(
 pub fn get_all_nodes(conn: &Connection) -> Result<Vec<NodeRecord>> {
     let mut stmt = conn.prepare(
         "SELECT id, file_id, kind, name, qualified_name, signature, docstring,
-                line_start, line_end, col_start, col_end, visibility, is_export
+                line_start, line_end, col_start, col_end, visibility, is_export, metadata
          FROM nodes",
     )?;
     let rows = stmt
@@ -219,6 +231,7 @@ pub fn get_all_nodes(conn: &Connection) -> Result<Vec<NodeRecord>> {
                 col_end: row.get(10)?,
                 visibility: row.get(11)?,
                 is_export: row.get::<_, i32>(12)? != 0,
+                metadata: row.get(13)?,
             })
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -227,7 +240,7 @@ pub fn get_all_nodes(conn: &Connection) -> Result<Vec<NodeRecord>> {
 
 pub fn get_all_edges(conn: &Connection) -> Result<Vec<EdgeRecord>> {
     let mut stmt = conn.prepare(
-        "SELECT id, source_node_id, target_node_id, kind, confidence FROM edges",
+        "SELECT id, source_node_id, target_node_id, kind, confidence, context FROM edges",
     )?;
     let rows = stmt
         .query_map([], |row| {
@@ -237,6 +250,7 @@ pub fn get_all_edges(conn: &Connection) -> Result<Vec<EdgeRecord>> {
                 target_node_id: row.get(2)?,
                 kind: row.get(3)?,
                 confidence: row.get(4)?,
+                context: row.get(5)?,
             })
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -244,11 +258,15 @@ pub fn get_all_edges(conn: &Connection) -> Result<Vec<EdgeRecord>> {
 }
 
 pub fn search_nodes_fts(conn: &Connection, query: &str, limit: usize) -> Result<Vec<(i64, f64)>> {
+    // Tokenize the query so FTS5 can match against tokenized columns
+    let tokenized = crate::db::tokenizer::tokenize_query(query);
+    let fts_query = if tokenized.is_empty() { query.to_string() } else { tokenized };
+
     let mut stmt = conn.prepare(
         "SELECT rowid, rank FROM nodes_fts WHERE nodes_fts MATCH ?1 ORDER BY rank LIMIT ?2",
     )?;
     let rows = stmt
-        .query_map(params![query, limit as i64], |row| {
+        .query_map(params![fts_query, limit as i64], |row| {
             Ok((row.get(0)?, row.get(1)?))
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -258,7 +276,7 @@ pub fn search_nodes_fts(conn: &Connection, query: &str, limit: usize) -> Result<
 pub fn get_node_by_id(conn: &Connection, id: i64) -> Result<Option<NodeRecord>> {
     let mut stmt = conn.prepare(
         "SELECT id, file_id, kind, name, qualified_name, signature, docstring,
-                line_start, line_end, col_start, col_end, visibility, is_export
+                line_start, line_end, col_start, col_end, visibility, is_export, metadata
          FROM nodes WHERE id = ?1",
     )?;
     let mut rows = stmt.query_map(params![id], |row| {
@@ -276,6 +294,7 @@ pub fn get_node_by_id(conn: &Connection, id: i64) -> Result<Option<NodeRecord>> 
             col_end: row.get(10)?,
             visibility: row.get(11)?,
             is_export: row.get::<_, i32>(12)? != 0,
+            metadata: row.get(13)?,
         })
     })?;
     match rows.next() {
@@ -379,9 +398,27 @@ pub fn query_nodes_filtered(
     let mut idx = 1;
 
     if let Some(q) = query {
-        sql.push_str(&format!(" AND (n.name LIKE ?{idx} OR n.qualified_name LIKE ?{idx})"));
-        bind_values.push(Box::new(format!("%{q}%")));
-        idx += 1;
+        let terms: Vec<&str> = q.split_whitespace().filter(|t| t.len() > 1).collect();
+        if terms.is_empty() {
+            sql.push_str(&format!(
+                " AND (n.name LIKE ?{idx} OR n.qualified_name LIKE ?{idx})"
+            ));
+            bind_values.push(Box::new(format!("%{q}%")));
+            idx += 1;
+        } else {
+            // Match any term against name, qualified_name, or signature
+            let mut term_conditions = Vec::new();
+            for term in &terms {
+                term_conditions.push(format!(
+                    "(n.name LIKE ?{idx} COLLATE NOCASE \
+                     OR n.qualified_name LIKE ?{idx} COLLATE NOCASE \
+                     OR n.signature LIKE ?{idx} COLLATE NOCASE)"
+                ));
+                bind_values.push(Box::new(format!("%{term}%")));
+                idx += 1;
+            }
+            sql.push_str(&format!(" AND ({})", term_conditions.join(" OR ")));
+        }
     }
     if let Some(k) = kind {
         sql.push_str(&format!(" AND n.kind = ?{idx}"));
@@ -434,6 +471,7 @@ pub struct EdgeQueryResult {
     pub target_file: String,
     pub kind: String,
     pub confidence: f64,
+    pub context: Option<String>,
 }
 
 pub fn query_edges_filtered(
@@ -447,7 +485,7 @@ pub fn query_edges_filtered(
     let mut sql = String::from(
         "SELECT sn.name, sn.qualified_name, sf.path,
                 tn.name, tn.qualified_name, tf.path,
-                e.kind, e.confidence
+                e.kind, e.confidence, e.context
          FROM edges e
          JOIN nodes sn ON sn.id = e.source_node_id
          JOIN nodes tn ON tn.id = e.target_node_id
@@ -506,6 +544,7 @@ pub fn query_edges_filtered(
                 target_file: row.get(5)?,
                 kind: row.get(6)?,
                 confidence: row.get(7)?,
+                context: row.get(8)?,
             })
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -574,6 +613,7 @@ pub struct UnresolvedRefRecord {
     pub target_qualified_name: Option<String>,
     pub edge_kind: String,
     pub import_path: Option<String>,
+    pub context: Option<String>,
 }
 
 pub fn get_unresolved_refs_filtered(
@@ -583,7 +623,7 @@ pub fn get_unresolved_refs_filtered(
 ) -> Result<Vec<UnresolvedRefRecord>> {
     let mut sql = String::from(
         "SELECT sn.name, sn.qualified_name, f.path,
-                ur.target_name, ur.target_qualified_name, ur.edge_kind, ur.import_path
+                ur.target_name, ur.target_qualified_name, ur.edge_kind, ur.import_path, ur.context
          FROM unresolved_refs ur
          JOIN nodes sn ON sn.id = ur.source_node_id
          JOIN files f ON f.id = sn.file_id
@@ -612,6 +652,7 @@ pub fn get_unresolved_refs_filtered(
                 target_qualified_name: row.get(4)?,
                 edge_kind: row.get(5)?,
                 import_path: row.get(6)?,
+                context: row.get(7)?,
             })
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -653,4 +694,347 @@ pub fn list_sessions_with_counts(
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+/// Batch query average edge confidence for a set of node IDs.
+/// Returns a map from node_id to average confidence.
+pub fn get_avg_edge_confidence_batch(
+    conn: &Connection,
+    node_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, f64>> {
+    if node_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let placeholders: Vec<String> = (1..=node_ids.len()).map(|i| format!("?{i}")).collect();
+    let in_clause = placeholders.join(",");
+
+    let sql = format!(
+        "SELECT node_id, AVG(confidence) FROM (
+            SELECT source_node_id AS node_id, confidence FROM edges WHERE source_node_id IN ({in_clause})
+            UNION ALL
+            SELECT target_node_id AS node_id, confidence FROM edges WHERE target_node_id IN ({in_clause})
+        ) GROUP BY node_id"
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+
+    // Numbered placeholders (?1, ?2, ...) are reused across both sub-selects,
+    // so we only bind node_ids once.
+    let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    for &id in node_ids {
+        bind_values.push(Box::new(id));
+    }
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = bind_values.iter().map(|b| b.as_ref()).collect();
+
+    let rows = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, f64>(1)?))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+/// Get the current index generation from metadata.
+pub fn get_index_generation(conn: &Connection) -> Result<u64> {
+    match get_metadata(conn, "index_generation")? {
+        Some(v) => Ok(v.parse().unwrap_or(0)),
+        None => Ok(0),
+    }
+}
+
+/// Increment the index generation counter.
+pub fn increment_index_generation(conn: &Connection) -> Result<u64> {
+    let current = get_index_generation(conn)?;
+    let next = current + 1;
+    set_metadata(conn, "index_generation", &next.to_string())?;
+    Ok(next)
+}
+
+// -- Phase 1 query helpers --
+
+/// A candidate node returned by name-based resolution queries.
+#[derive(Debug, Clone)]
+pub struct CandidateNode {
+    pub id: i64,
+    pub file_id: i64,
+    pub kind: String,
+    pub name: String,
+    pub qualified_name: Option<String>,
+    pub signature: Option<String>,
+}
+
+/// An import target: a resolved edge from a file to another file's node.
+#[derive(Debug, Clone)]
+pub struct ImportTarget {
+    pub target_node_id: i64,
+    pub target_file_id: i64,
+    pub target_file_path: String,
+}
+
+/// A node's range information for budget allocation.
+#[derive(Debug, Clone)]
+pub struct NodeRange {
+    pub node_id: i64,
+    pub file_id: i64,
+    pub file_path: String,
+    pub line_start: i64,
+    pub line_end: i64,
+    pub kind: String,
+    pub name: String,
+    pub signature: Option<String>,
+}
+
+/// Find ALL exported/pub nodes matching `name` from files other than `source_file_id`.
+pub fn find_candidate_nodes_by_name(
+    conn: &Connection,
+    name: &str,
+    source_file_id: i64,
+) -> Result<Vec<CandidateNode>> {
+    let mut stmt = conn.prepare(
+        "SELECT n.id, n.file_id, n.kind, n.name, n.qualified_name, n.signature
+         FROM nodes n
+         WHERE n.name = ?1
+           AND n.file_id != ?2
+           AND (n.is_export = 1 OR n.visibility = 'pub' OR n.visibility = 'public')
+         ORDER BY n.id",
+    )?;
+    let rows = stmt
+        .query_map(params![name, source_file_id], |row| {
+            Ok(CandidateNode {
+                id: row.get(0)?,
+                file_id: row.get(1)?,
+                kind: row.get(2)?,
+                name: row.get(3)?,
+                qualified_name: row.get(4)?,
+                signature: row.get(5)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Get all import edges from a file: returns (target_node_id, target_file_id, target_file_path).
+pub fn get_file_import_targets(
+    conn: &Connection,
+    file_id: i64,
+) -> Result<Vec<ImportTarget>> {
+    let mut stmt = conn.prepare(
+        "SELECT e.target_node_id, tn.file_id, f.path
+         FROM edges e
+         JOIN nodes sn ON sn.id = e.source_node_id
+         JOIN nodes tn ON tn.id = e.target_node_id
+         JOIN files f ON f.id = tn.file_id
+         WHERE sn.file_id = ?1
+           AND e.kind = 'imports'",
+    )?;
+    let rows = stmt
+        .query_map(params![file_id], |row| {
+            Ok(ImportTarget {
+                target_node_id: row.get(0)?,
+                target_file_id: row.get(1)?,
+                target_file_path: row.get(2)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Get node ranges by a set of node IDs (for budget allocation).
+pub fn get_node_ranges_by_ids(
+    conn: &Connection,
+    node_ids: &[i64],
+) -> Result<Vec<NodeRange>> {
+    if node_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders: Vec<String> = (1..=node_ids.len()).map(|i| format!("?{i}")).collect();
+    let in_clause = placeholders.join(",");
+    let sql = format!(
+        "SELECT n.id, n.file_id, f.path, n.line_start, n.line_end, n.kind, n.name, n.signature
+         FROM nodes n
+         JOIN files f ON f.id = n.file_id
+         WHERE n.id IN ({in_clause})"
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let bind_values: Vec<Box<dyn rusqlite::types::ToSql>> =
+        node_ids.iter().map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
+
+    let rows = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok(NodeRange {
+                node_id: row.get(0)?,
+                file_id: row.get(1)?,
+                file_path: row.get(2)?,
+                line_start: row.get(3)?,
+                line_end: row.get(4)?,
+                kind: row.get(5)?,
+                name: row.get(6)?,
+                signature: row.get(7)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Get all (path, mtime_ns) pairs sorted by path.
+pub fn get_all_file_mtimes(conn: &Connection) -> Result<Vec<(String, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT path, mtime_ns FROM files ORDER BY path",
+    )?;
+    let rows = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Get total node count for a file.
+pub fn get_file_node_count(conn: &Connection, file_id: i64) -> Result<i64> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM nodes WHERE file_id = ?1",
+        params![file_id],
+        |r| r.get(0),
+    )?;
+    Ok(count)
+}
+
+/// Get nodes within a line range for a given file.
+pub fn get_nodes_in_range(
+    conn: &Connection,
+    file_id: i64,
+    line_start: i64,
+    line_end: i64,
+) -> Result<Vec<NodeRecord>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, file_id, kind, name, qualified_name, signature, docstring,
+                line_start, line_end, col_start, col_end, visibility, is_export, metadata
+         FROM nodes
+         WHERE file_id = ?1 AND line_end >= ?2 AND line_start <= ?3
+         ORDER BY line_start",
+    )?;
+    let rows = stmt
+        .query_map(params![file_id, line_start, line_end], |row| {
+            Ok(NodeRecord {
+                id: row.get(0)?,
+                file_id: row.get(1)?,
+                kind: row.get(2)?,
+                name: row.get(3)?,
+                qualified_name: row.get(4)?,
+                signature: row.get(5)?,
+                docstring: row.get(6)?,
+                line_start: row.get(7)?,
+                line_end: row.get(8)?,
+                col_start: row.get(9)?,
+                col_end: row.get(10)?,
+                visibility: row.get(11)?,
+                is_export: row.get::<_, i32>(12)? != 0,
+                metadata: row.get(13)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Get all nodes for the given file IDs (for incremental graph updates).
+pub fn get_nodes_for_files(conn: &Connection, file_ids: &[i64]) -> Result<Vec<NodeRecord>> {
+    if file_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders: Vec<String> = (1..=file_ids.len()).map(|i| format!("?{i}")).collect();
+    let in_clause = placeholders.join(",");
+    let sql = format!(
+        "SELECT id, file_id, kind, name, qualified_name, signature, docstring,
+                line_start, line_end, col_start, col_end, visibility, is_export, metadata
+         FROM nodes
+         WHERE file_id IN ({in_clause})"
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let bind_values: Vec<Box<dyn rusqlite::types::ToSql>> =
+        file_ids.iter().map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
+
+    let rows = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok(NodeRecord {
+                id: row.get(0)?,
+                file_id: row.get(1)?,
+                kind: row.get(2)?,
+                name: row.get(3)?,
+                qualified_name: row.get(4)?,
+                signature: row.get(5)?,
+                docstring: row.get(6)?,
+                line_start: row.get(7)?,
+                line_end: row.get(8)?,
+                col_start: row.get(9)?,
+                col_end: row.get(10)?,
+                visibility: row.get(11)?,
+                is_export: row.get::<_, i32>(12)? != 0,
+                metadata: row.get(13)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Get all edges where either endpoint is in the given node set.
+pub fn get_edges_for_nodes(conn: &Connection, node_ids: &[i64]) -> Result<Vec<EdgeRecord>> {
+    if node_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders: Vec<String> = (1..=node_ids.len()).map(|i| format!("?{i}")).collect();
+    let in_clause = placeholders.join(",");
+    let sql = format!(
+        "SELECT id, source_node_id, target_node_id, kind, confidence, context
+         FROM edges
+         WHERE source_node_id IN ({in_clause}) OR target_node_id IN ({in_clause})"
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    // node_ids twice (once per sub-clause)
+    let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    for &id in node_ids {
+        bind_values.push(Box::new(id));
+    }
+    for &id in node_ids {
+        bind_values.push(Box::new(id));
+    }
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
+
+    let rows = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok(EdgeRecord {
+                id: row.get(0)?,
+                source_node_id: row.get(1)?,
+                target_node_id: row.get(2)?,
+                kind: row.get(3)?,
+                confidence: row.get(4)?,
+                context: row.get(5)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Get the source file_id for a node.
+pub fn get_node_file_id(conn: &Connection, node_id: i64) -> Result<Option<i64>> {
+    let result = conn.query_row(
+        "SELECT file_id FROM nodes WHERE id = ?1",
+        params![node_id],
+        |row| row.get(0),
+    );
+    match result {
+        Ok(id) => Ok(Some(id)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
 }

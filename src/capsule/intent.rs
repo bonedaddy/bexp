@@ -43,13 +43,13 @@ pub fn detect_intent(query: &str) -> Intent {
     }
 }
 
-/// Get intent-specific search weights: (bm25_weight, tfidf_weight, centrality_weight)
-pub fn intent_weights(intent: &Intent) -> (f64, f64, f64) {
+/// Get intent-specific search weights: (bm25, tfidf, centrality, confidence)
+pub fn intent_weights(intent: &Intent) -> (f64, f64, f64, f64) {
     match intent {
-        Intent::Debug => (0.5, 0.3, 0.2),
-        Intent::BlastRadius => (0.2, 0.2, 0.6),
-        Intent::Modify => (0.35, 0.35, 0.3),
-        Intent::Explore => (0.33, 0.34, 0.33),
+        Intent::Debug => (0.45, 0.25, 0.15, 0.15),
+        Intent::BlastRadius => (0.15, 0.15, 0.45, 0.25),
+        Intent::Modify => (0.30, 0.30, 0.20, 0.20),
+        Intent::Explore => (0.30, 0.30, 0.25, 0.15),
     }
 }
 
@@ -83,9 +83,9 @@ mod tests {
 
     #[test]
     fn intent_weights_match_expected_profiles() {
-        assert_eq!(intent_weights(&Intent::Debug), (0.5, 0.3, 0.2));
-        assert_eq!(intent_weights(&Intent::BlastRadius), (0.2, 0.2, 0.6));
-        assert_eq!(intent_weights(&Intent::Modify), (0.35, 0.35, 0.3));
-        assert_eq!(intent_weights(&Intent::Explore), (0.33, 0.34, 0.33));
+        assert_eq!(intent_weights(&Intent::Debug), (0.45, 0.25, 0.15, 0.15));
+        assert_eq!(intent_weights(&Intent::BlastRadius), (0.15, 0.15, 0.45, 0.25));
+        assert_eq!(intent_weights(&Intent::Modify), (0.30, 0.30, 0.20, 0.20));
+        assert_eq!(intent_weights(&Intent::Explore), (0.30, 0.30, 0.25, 0.15));
     }
 }

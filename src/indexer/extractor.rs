@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::types::{EdgeKind, Language, NodeKind};
 
 #[derive(Debug, Clone)]
@@ -13,6 +15,7 @@ pub struct ExtractedNode {
     pub col_end: usize,
     pub visibility: Option<String>,
     pub is_export: bool,
+    pub metadata: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -21,6 +24,7 @@ pub struct ExtractedEdge {
     pub target_idx: usize,
     pub kind: EdgeKind,
     pub confidence: f64,
+    pub context: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +34,7 @@ pub struct UnresolvedRef {
     pub target_qualified_name: Option<String>,
     pub edge_kind: EdgeKind,
     pub import_path: Option<String>,
+    pub context: Option<String>,
 }
 
 #[derive(Debug, Clone)]

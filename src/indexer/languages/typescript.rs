@@ -52,6 +52,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
+            context: None,
                     });
                 }
                 // Extract call references within the body
@@ -75,6 +76,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
+            context: None,
                     });
                 }
                 // Check for extends/implements
@@ -97,6 +99,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
+            context: None,
                     });
                 }
                 extract_heritage(node, source, idx, unresolved_refs);
@@ -118,6 +121,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
+            context: None,
                     });
                 }
             }
@@ -132,6 +136,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
+            context: None,
                     });
                 }
             }
@@ -236,6 +241,7 @@ fn extract_function(node: Node, source: &str, file_path: &str, node_kind: &str) 
         col_end: node.end_position().column,
         visibility: None,
         is_export,
+            metadata: None,
     })
 }
 
@@ -264,6 +270,7 @@ fn extract_class(node: Node, source: &str, file_path: &str) -> Option<ExtractedN
         col_end: node.end_position().column,
         visibility: None,
         is_export,
+            metadata: None,
     })
 }
 
@@ -292,6 +299,7 @@ fn extract_interface(node: Node, source: &str, file_path: &str) -> Option<Extrac
         col_end: node.end_position().column,
         visibility: None,
         is_export,
+            metadata: None,
     })
 }
 
@@ -319,6 +327,7 @@ fn extract_type_alias(node: Node, source: &str, file_path: &str) -> Option<Extra
         col_end: node.end_position().column,
         visibility: None,
         is_export,
+            metadata: None,
     })
 }
 
@@ -344,6 +353,7 @@ fn extract_enum(node: Node, source: &str, file_path: &str) -> Option<ExtractedNo
         col_end: node.end_position().column,
         visibility: None,
         is_export,
+            metadata: None,
     })
 }
 
@@ -376,6 +386,7 @@ fn extract_import(
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
+            metadata: None,
     });
 
     // Extract imported names as unresolved refs
@@ -405,6 +416,7 @@ fn extract_import_names(
                         target_qualified_name: None,
                         edge_kind: EdgeKind::Imports,
                         import_path: import_path.clone(),
+            context: None,
                     });
                 }
                 "import_specifier" => {
@@ -416,6 +428,7 @@ fn extract_import_names(
                             target_qualified_name: None,
                             edge_kind: EdgeKind::Imports,
                             import_path: import_path.clone(),
+            context: None,
                         });
                     }
                 }
@@ -448,6 +461,7 @@ fn extract_heritage(
                                     target_qualified_name: None,
                                     edge_kind: EdgeKind::Extends,
                                     import_path: None,
+            context: None,
                                 });
                             }
                         }
@@ -464,6 +478,7 @@ fn extract_heritage(
                                     target_qualified_name: None,
                                     edge_kind: EdgeKind::Implements,
                                     import_path: None,
+            context: None,
                                 });
                             }
                         }
@@ -475,6 +490,27 @@ fn extract_heritage(
     }
 }
 
+fn detect_call_context(node: Node) -> Option<String> {
+    let mut current = node.parent();
+    while let Some(parent) = current {
+        match parent.kind() {
+            "if_statement" | "switch_statement" | "ternary_expression" => {
+                return Some("conditional".into())
+            }
+            "for_statement" | "for_in_statement" | "while_statement" | "do_statement" => {
+                return Some("loop".into())
+            }
+            "catch_clause" => return Some("error_handler".into()),
+            "try_statement" => return Some("error_handler".into()),
+            // Stop at function boundaries
+            "function_declaration" | "method_definition" | "arrow_function" | "function" => break,
+            _ => {}
+        }
+        current = parent.parent();
+    }
+    None
+}
+
 fn extract_calls(
     node: Node,
     source: &str,
@@ -482,20 +518,16 @@ fn extract_calls(
     unresolved_refs: &mut Vec<UnresolvedRef>,
 ) {
     if node.kind() == "call_expression" {
+        let context = detect_call_context(node);
         if let Some(func) = node.child(0) {
             let name = get_node_text(func, source).to_string();
-            // Only track simple identifiers and member expressions
-            let final_name = if name.contains('.') {
-                name.clone()
-            } else {
-                name.clone()
-            };
             unresolved_refs.push(UnresolvedRef {
                 source_idx: parent_idx,
-                target_name: final_name,
+                target_name: name,
                 target_qualified_name: None,
                 edge_kind: EdgeKind::Calls,
                 import_path: None,
+                context,
             });
         }
     }
@@ -552,6 +584,7 @@ fn extract_variable_declaration(
                         col_end: child.end_position().column,
                         visibility: None,
                         is_export,
+            metadata: None,
                     });
 
                     if let Some(parent) = parent_idx {
@@ -560,6 +593,7 @@ fn extract_variable_declaration(
                             target_idx: idx,
                             kind: EdgeKind::Contains,
                             confidence: 1.0,
+            context: None,
                         });
                     }
                 }

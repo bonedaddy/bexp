@@ -110,6 +110,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
+            context: None,
                     });
                 }
                 extract_calls(node, source, idx, unresolved_refs);
@@ -126,6 +127,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
+            context: None,
                     });
                 }
             }
@@ -140,6 +142,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
+            context: None,
                     });
                 }
             }
@@ -154,6 +157,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
+            context: None,
                     });
                 }
             }
@@ -163,7 +167,7 @@ fn extract_from_node(
         }
         "declaration" => {
             // Only extract top-level declarations (parent is translation_unit)
-            if node.parent().map_or(false, |p| p.kind() == "translation_unit") {
+            if node.parent().is_some_and(|p| p.kind() == "translation_unit") {
                 if let Some(extracted) = extract_declaration(node, source, file_path) {
                     let idx = nodes.len();
                     nodes.push(extracted);
@@ -173,6 +177,7 @@ fn extract_from_node(
                             target_idx: idx,
                             kind: EdgeKind::Contains,
                             confidence: 1.0,
+            context: None,
                         });
                     }
                 }
@@ -210,6 +215,7 @@ fn extract_function(node: Node, source: &str, file_path: &str) -> Option<Extract
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
+            metadata: None,
     })
 }
 
@@ -230,6 +236,7 @@ fn extract_struct(node: Node, source: &str, file_path: &str) -> Option<Extracted
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
+            metadata: None,
     })
 }
 
@@ -250,6 +257,7 @@ fn extract_enum(node: Node, source: &str, file_path: &str) -> Option<ExtractedNo
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
+            metadata: None,
     })
 }
 
@@ -271,6 +279,7 @@ fn extract_typedef(node: Node, source: &str, file_path: &str) -> Option<Extracte
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
+            metadata: None,
     })
 }
 
@@ -299,6 +308,7 @@ fn extract_include(
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
+            metadata: None,
     });
 
     unresolved_refs.push(UnresolvedRef {
@@ -307,6 +317,7 @@ fn extract_include(
         target_qualified_name: None,
         edge_kind: EdgeKind::Imports,
         import_path: None,
+            context: None,
     });
 }
 
@@ -337,6 +348,7 @@ fn extract_declaration(node: Node, source: &str, file_path: &str) -> Option<Extr
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
+            metadata: None,
     })
 }
 
@@ -355,6 +367,7 @@ fn extract_calls(
                 target_qualified_name: None,
                 edge_kind: EdgeKind::Calls,
                 import_path: None,
+            context: None,
             });
         }
     }

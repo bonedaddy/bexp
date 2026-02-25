@@ -11,3 +11,4 @@ pub mod mcp;
 pub mod memory;
 pub mod skeleton;
 pub mod types;
+pub mod workspace;

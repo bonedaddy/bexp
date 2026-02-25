@@ -198,6 +198,7 @@ pub struct ReindexParams {
 
 #[tool_router]
 impl VexpServer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: Arc<Database>,
         config: Arc<VexpConfig>,

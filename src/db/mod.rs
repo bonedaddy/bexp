@@ -1,5 +1,6 @@
 pub mod queries;
 pub mod schema;
+pub mod tokenizer;
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -46,6 +47,38 @@ impl Database {
         })
     }
 
+    /// Open a test database using SQLite shared-cache URI mode so that
+    /// writer and reader share the same in-memory database.
+    pub fn open_test() -> Result<Self> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let uri = format!("file:test_{n}?mode=memory&cache=shared");
+
+        let mut writer = Connection::open_with_flags(
+            &uri,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+                | rusqlite::OpenFlags::SQLITE_OPEN_CREATE
+                | rusqlite::OpenFlags::SQLITE_OPEN_URI
+                | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        Self::configure_connection(&writer)?;
+        Self::apply_schema(&mut writer)?;
+
+        let reader = Connection::open_with_flags(
+            &uri,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                | rusqlite::OpenFlags::SQLITE_OPEN_URI
+                | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        Self::configure_connection(&reader)?;
+
+        Ok(Self {
+            writer: Mutex::new(writer),
+            reader: Mutex::new(reader),
+        })
+    }
+
     fn configure_connection(conn: &Connection) -> Result<()> {
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
@@ -58,8 +91,9 @@ impl Database {
     }
 
     fn apply_schema(conn: &mut Connection) -> Result<()> {
-        conn.execute_batch(schema::SCHEMA)
-            .map_err(|e| VexpError::Migration(format!("Schema apply failed: {e}")))?;
+        schema::migrations()
+            .to_latest(conn)
+            .map_err(|e| VexpError::Migration(format!("Migration failed: {e}")))?;
         Ok(())
     }
 

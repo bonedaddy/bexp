@@ -1,8 +1,16 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Result, VexpError};
 use crate::types::DetailLevel;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LspServerConfig {
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VexpConfig {
@@ -32,6 +40,15 @@ pub struct VexpConfig {
 
     #[serde(default = "default_observation_ttl_days")]
     pub observation_ttl_days: u64,
+
+    #[serde(default)]
+    pub lsp_resolution: bool,
+
+    #[serde(default)]
+    pub lsp_servers: HashMap<String, LspServerConfig>,
+
+    #[serde(default)]
+    pub workspace_group: Vec<String>,
 }
 
 fn default_token_budget() -> usize {
@@ -71,6 +88,9 @@ impl Default for VexpConfig {
             memory_budget_pct: default_memory_budget_pct(),
             session_compress_after_hours: default_session_compress_after_hours(),
             observation_ttl_days: default_observation_ttl_days(),
+            lsp_resolution: false,
+            lsp_servers: HashMap::new(),
+            workspace_group: Vec::new(),
         }
     }
 }

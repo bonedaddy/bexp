@@ -65,6 +65,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
+            context: None,
                     });
                 }
                 extract_calls(node, source, idx, unresolved_refs);
@@ -86,6 +87,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
+            context: None,
                     });
                 }
                 // Check for base classes
@@ -100,6 +102,7 @@ fn extract_from_node(
                                     target_qualified_name: None,
                                     edge_kind: EdgeKind::Extends,
                                     import_path: None,
+            context: None,
                                 });
                             }
                         }
@@ -203,6 +206,7 @@ fn extract_function(node: Node, source: &str, file_path: &str) -> Option<Extract
         col_end: node.end_position().column,
         visibility,
         is_export: false,
+            metadata: None,
     })
 }
 
@@ -240,6 +244,7 @@ fn extract_class(node: Node, source: &str, file_path: &str) -> Option<ExtractedN
         col_end: node.end_position().column,
         visibility: Some("public".to_string()),
         is_export: false,
+            metadata: None,
     })
 }
 
@@ -269,6 +274,7 @@ fn extract_import(
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
+            metadata: None,
     });
 
     // Extract imported names
@@ -284,6 +290,7 @@ fn extract_import(
                             target_qualified_name: None,
                             edge_kind: EdgeKind::Imports,
                             import_path: module_name.clone(),
+            context: None,
                         });
                     }
                 }
@@ -295,6 +302,7 @@ fn extract_import(
                     target_qualified_name: None,
                     edge_kind: EdgeKind::Imports,
                     import_path: module_name.clone(),
+            context: None,
                 });
             }
         }
@@ -336,7 +344,27 @@ fn extract_assignment(node: Node, source: &str, file_path: &str) -> Option<Extra
         col_end: actual.end_position().column,
         visibility: Some("public".to_string()),
         is_export: false,
+            metadata: None,
     })
+}
+
+fn detect_call_context(node: Node) -> Option<String> {
+    let mut current = node.parent();
+    while let Some(parent) = current {
+        match parent.kind() {
+            "if_statement" | "elif_clause" | "conditional_expression" => {
+                return Some("conditional".into())
+            }
+            "for_statement" | "while_statement" => return Some("loop".into()),
+            "except_clause" => return Some("error_handler".into()),
+            "try_statement" => return Some("error_handler".into()),
+            // Stop at function boundaries
+            "function_definition" | "lambda" => break,
+            _ => {}
+        }
+        current = parent.parent();
+    }
+    None
 }
 
 fn extract_calls(
@@ -346,6 +374,7 @@ fn extract_calls(
     unresolved_refs: &mut Vec<UnresolvedRef>,
 ) {
     if node.kind() == "call" {
+        let context = detect_call_context(node);
         if let Some(func) = node.child(0) {
             let name = get_node_text(func, source).to_string();
             unresolved_refs.push(UnresolvedRef {
@@ -354,6 +383,7 @@ fn extract_calls(
                 target_qualified_name: None,
                 edge_kind: EdgeKind::Calls,
                 import_path: None,
+                context,
             });
         }
     }

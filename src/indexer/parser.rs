@@ -5,6 +5,12 @@ use crate::types::Language;
 
 pub struct ParserPool;
 
+impl Default for ParserPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ParserPool {
     pub fn new() -> Self {
         Self

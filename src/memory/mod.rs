@@ -164,6 +164,9 @@ impl MemoryService {
             }
         }
 
+        // Auto-link: detect symbol names and file paths in content
+        auto_link_observation(&conn, obs_id, content)?;
+
         Ok(format!(
             "Observation saved (id: {}).\n**Headline:** {}",
             obs_id, headline
@@ -195,4 +198,128 @@ fn find_node_by_name(conn: &rusqlite::Connection, name: &str) -> Option<i64> {
         |row| row.get(0),
     )
     .ok()
+}
+
+/// Common English words to filter out from PascalCase symbol detection.
+const COMMON_WORDS: &[&str] = &[
+    "The", "This", "That", "These", "Those", "When", "Where", "Which",
+    "What", "With", "Without", "About", "After", "Before", "Between",
+    "During", "From", "Into", "Through", "Under", "Until", "Upon",
+    "Also", "Both", "Each", "Every", "Some", "None", "Many", "Much",
+    "Most", "Other", "Such", "Than", "Then", "Only", "Just", "Even",
+    "Still", "Already", "Always", "Never", "Often", "Sometimes",
+    "However", "Therefore", "Because", "Although", "Whether", "While",
+    "Since", "Though", "Unless", "Once", "Here", "There", "Note",
+    "Todo", "Fixme", "Hack", "Warning", "Error",
+];
+
+/// Auto-detect symbol names and file paths in observation content and link them.
+fn auto_link_observation(
+    conn: &rusqlite::Connection,
+    obs_id: i64,
+    content: &str,
+) -> Result<()> {
+    use std::collections::HashSet;
+
+    let mut linked_nodes = HashSet::new();
+    let mut linked_files = HashSet::new();
+
+    // Extract candidate symbol names
+    // 1. PascalCase identifiers (3+ chars, starts with uppercase)
+    // 2. Identifiers containing _ or :: (3+ chars)
+    let candidates = extract_symbol_candidates(content);
+
+    // Auto-link symbols (up to 10)
+    for candidate in candidates.iter().take(30) {
+        if linked_nodes.len() >= 10 {
+            break;
+        }
+
+        // Prefer exported/pub nodes
+        let node_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM nodes WHERE name = ?1
+                 AND (is_export = 1 OR visibility = 'pub')
+                 LIMIT 1",
+                rusqlite::params![candidate],
+                |row| row.get(0),
+            )
+            .ok()
+            .or_else(|| {
+                conn.query_row(
+                    "SELECT id FROM nodes WHERE name = ?1 LIMIT 1",
+                    rusqlite::params![candidate],
+                    |row| row.get(0),
+                )
+                .ok()
+            });
+
+        if let Some(nid) = node_id {
+            if linked_nodes.insert(nid) {
+                let _ = observation::link_observation_symbol(conn, obs_id, nid);
+            }
+        }
+    }
+
+    // Scan for file paths (containing / with code extension)
+    for word in content.split_whitespace() {
+        if linked_files.len() >= 10 {
+            break;
+        }
+
+        let cleaned = word.trim_matches(|c: char| c == '`' || c == '\'' || c == '"' || c == ',' || c == '.' || c == ':' || c == ')' || c == '(');
+        if cleaned.contains('/') {
+            let path = std::path::Path::new(cleaned);
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                if crate::types::Language::from_extension(ext).is_some() {
+                    if let Ok(Some(file)) = crate::db::queries::get_file_by_path(conn, cleaned) {
+                        if linked_files.insert(file.id) {
+                            let _ = observation::link_observation_file(
+                                conn,
+                                obs_id,
+                                file.id,
+                                &file.content_hash,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn extract_symbol_candidates(content: &str) -> Vec<String> {
+    use std::collections::HashSet;
+
+    let common: HashSet<&str> = COMMON_WORDS.iter().copied().collect();
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+
+    for word in content.split(|c: char| c.is_whitespace() || c == ',' || c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}') {
+        let cleaned = word.trim_matches(|c: char| c == '`' || c == '\'' || c == '"' || c == '.' || c == ':' || c == ';');
+
+        if cleaned.len() < 3 {
+            continue;
+        }
+
+        // PascalCase: starts with uppercase, has lowercase chars
+        let is_pascal = cleaned.starts_with(|c: char| c.is_uppercase())
+            && cleaned.chars().any(|c| c.is_lowercase())
+            && cleaned.chars().all(|c| c.is_alphanumeric() || c == '_');
+
+        // snake_case or qualified: contains _ or ::
+        let is_snake_or_qualified =
+            (cleaned.contains('_') || cleaned.contains("::"))
+                && cleaned.chars().all(|c| c.is_alphanumeric() || c == '_' || c == ':');
+
+        if (is_pascal || is_snake_or_qualified) && !common.contains(cleaned)
+            && seen.insert(cleaned.to_string())
+        {
+            candidates.push(cleaned.to_string());
+        }
+    }
+
+    candidates
 }
