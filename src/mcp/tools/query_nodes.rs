@@ -1,10 +1,10 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::db::queries;
-use crate::mcp::server::{QueryNodesParams, bexpServer};
+use crate::mcp::server::{BexpServer, QueryNodesParams};
 
 pub async fn handle(
-    server: &bexpServer,
+    server: &BexpServer,
     params: QueryNodesParams,
 ) -> Result<CallToolResult, ErrorData> {
     if let Some(result) = super::wait_for_index(&server.indexer).await {

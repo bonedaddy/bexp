@@ -16,7 +16,15 @@ impl LanguageExtractor for CppExtractor {
         let mut unresolved_refs = Vec::new();
 
         let root = tree.root_node();
-        extract_from_node(root, source, file_path, &mut nodes, &mut edges, &mut unresolved_refs, None);
+        extract_from_node(
+            root,
+            source,
+            file_path,
+            &mut nodes,
+            &mut edges,
+            &mut unresolved_refs,
+            None,
+        );
 
         ExtractedFile {
             language: Language::Cpp,
@@ -56,8 +64,11 @@ fn find_identifier_in_declarator(node: Node, source: &str) -> Option<String> {
         "qualified_identifier" | "destructor_name" | "operator_name" | "template_function" => {
             Some(get_node_text(node, source).to_string())
         }
-        "pointer_declarator" | "function_declarator" | "array_declarator"
-        | "parenthesized_declarator" | "reference_declarator" => {
+        "pointer_declarator"
+        | "function_declarator"
+        | "array_declarator"
+        | "parenthesized_declarator"
+        | "reference_declarator" => {
             for i in 0..node.named_child_count() {
                 if let Some(child) = node.named_child(i as u32) {
                     if let Some(name) = find_identifier_in_declarator(child, source) {
@@ -111,7 +122,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
-            context: None,
+                        context: None,
                     });
                 }
                 extract_calls(node, source, idx, unresolved_refs);
@@ -128,7 +139,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
-            context: None,
+                        context: None,
                     });
                 }
             }
@@ -143,7 +154,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
-            context: None,
+                        context: None,
                     });
                 }
             }
@@ -158,14 +169,22 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
-            context: None,
+                        context: None,
                     });
                 }
                 extract_base_classes(node, source, idx, unresolved_refs);
                 // Recurse into class body for methods
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i as u32) {
-                        extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
+                        extract_from_node(
+                            child,
+                            source,
+                            file_path,
+                            nodes,
+                            edges,
+                            unresolved_refs,
+                            Some(idx),
+                        );
                     }
                 }
                 return;
@@ -181,12 +200,20 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
-            context: None,
+                        context: None,
                     });
                 }
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i as u32) {
-                        extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
+                        extract_from_node(
+                            child,
+                            source,
+                            file_path,
+                            nodes,
+                            edges,
+                            unresolved_refs,
+                            Some(idx),
+                        );
                     }
                 }
                 return;
@@ -197,11 +224,21 @@ fn extract_from_node(
             for i in 0..node.child_count() {
                 if let Some(child) = node.child(i as u32) {
                     let k = child.kind();
-                    if k == "function_definition" || k == "class_specifier"
-                        || k == "struct_specifier" || k == "alias_declaration"
+                    if k == "function_definition"
+                        || k == "class_specifier"
+                        || k == "struct_specifier"
+                        || k == "alias_declaration"
                         || k == "declaration"
                     {
-                        extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, parent_idx);
+                        extract_from_node(
+                            child,
+                            source,
+                            file_path,
+                            nodes,
+                            edges,
+                            unresolved_refs,
+                            parent_idx,
+                        );
                         return;
                     }
                 }
@@ -217,7 +254,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
-            context: None,
+                        context: None,
                     });
                 }
             }
@@ -232,7 +269,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
-            context: None,
+                        context: None,
                     });
                 }
             }
@@ -254,13 +291,14 @@ fn extract_from_node(
                 col_end: node.end_position().column,
                 visibility: None,
                 is_export: false,
-            metadata: None,
+                metadata: None,
             });
         }
         "declaration" => {
-            if node.parent().is_some_and(|p| {
-                p.kind() == "translation_unit" || p.kind() == "declaration_list"
-            }) {
+            if node
+                .parent()
+                .is_some_and(|p| p.kind() == "translation_unit" || p.kind() == "declaration_list")
+            {
                 if let Some(extracted) = extract_declaration(node, source, file_path) {
                     let idx = nodes.len();
                     nodes.push(extracted);
@@ -270,7 +308,7 @@ fn extract_from_node(
                             target_idx: idx,
                             kind: EdgeKind::Contains,
                             confidence: 1.0,
-            context: None,
+                            context: None,
                         });
                     }
                 }
@@ -281,7 +319,15 @@ fn extract_from_node(
 
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i as u32) {
-            extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, parent_idx);
+            extract_from_node(
+                child,
+                source,
+                file_path,
+                nodes,
+                edges,
+                unresolved_refs,
+                parent_idx,
+            );
         }
     }
 }
@@ -308,7 +354,7 @@ fn extract_function(node: Node, source: &str, file_path: &str) -> Option<Extract
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
-            metadata: None,
+        metadata: None,
     })
 }
 
@@ -329,7 +375,7 @@ fn extract_struct(node: Node, source: &str, file_path: &str) -> Option<Extracted
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
-            metadata: None,
+        metadata: None,
     })
 }
 
@@ -350,7 +396,7 @@ fn extract_enum(node: Node, source: &str, file_path: &str) -> Option<ExtractedNo
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
-            metadata: None,
+        metadata: None,
     })
 }
 
@@ -371,7 +417,7 @@ fn extract_class(node: Node, source: &str, file_path: &str) -> Option<ExtractedN
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
-            metadata: None,
+        metadata: None,
     })
 }
 
@@ -396,7 +442,7 @@ fn extract_base_classes(
                     target_qualified_name: None,
                     edge_kind: EdgeKind::Extends,
                     import_path: None,
-            context: None,
+                    context: None,
                 });
             }
         }
@@ -420,7 +466,7 @@ fn extract_namespace(node: Node, source: &str, file_path: &str) -> Option<Extrac
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
-            metadata: None,
+        metadata: None,
     })
 }
 
@@ -428,7 +474,13 @@ fn extract_typedef(node: Node, source: &str, file_path: &str) -> Option<Extracte
     let declarator = find_child_by_field(node, "declarator")?;
     let name = find_identifier_in_declarator(declarator, source)?;
     let qualified_name = format!("{}::{}", file_path, name);
-    let signature = Some(get_node_text(node, source).lines().next().unwrap_or("").to_string());
+    let signature = Some(
+        get_node_text(node, source)
+            .lines()
+            .next()
+            .unwrap_or("")
+            .to_string(),
+    );
 
     Some(ExtractedNode {
         kind: NodeKind::TypeAlias,
@@ -442,7 +494,7 @@ fn extract_typedef(node: Node, source: &str, file_path: &str) -> Option<Extracte
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
-            metadata: None,
+        metadata: None,
     })
 }
 
@@ -451,7 +503,13 @@ fn extract_alias(node: Node, source: &str, file_path: &str) -> Option<ExtractedN
     let name_node = find_child_by_field(node, "name")?;
     let name = get_node_text(name_node, source).to_string();
     let qualified_name = format!("{}::{}", file_path, name);
-    let signature = Some(get_node_text(node, source).lines().next().unwrap_or("").to_string());
+    let signature = Some(
+        get_node_text(node, source)
+            .lines()
+            .next()
+            .unwrap_or("")
+            .to_string(),
+    );
 
     Some(ExtractedNode {
         kind: NodeKind::TypeAlias,
@@ -465,7 +523,7 @@ fn extract_alias(node: Node, source: &str, file_path: &str) -> Option<ExtractedN
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
-            metadata: None,
+        metadata: None,
     })
 }
 
@@ -493,7 +551,7 @@ fn extract_include(
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
-            metadata: None,
+        metadata: None,
     });
 
     unresolved_refs.push(UnresolvedRef {
@@ -502,7 +560,7 @@ fn extract_include(
         target_qualified_name: None,
         edge_kind: EdgeKind::Imports,
         import_path: None,
-            context: None,
+        context: None,
     });
 }
 
@@ -532,7 +590,7 @@ fn extract_declaration(node: Node, source: &str, file_path: &str) -> Option<Extr
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
-            metadata: None,
+        metadata: None,
     })
 }
 
@@ -551,7 +609,7 @@ fn extract_calls(
                 target_qualified_name: None,
                 edge_kind: EdgeKind::Calls,
                 import_path: None,
-            context: None,
+                context: None,
             });
         }
     }

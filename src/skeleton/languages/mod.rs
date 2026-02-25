@@ -66,10 +66,7 @@ pub fn get_rules(lang: Language) -> SkeletonRules {
             ],
         },
         Language::Python => SkeletonRules {
-            collapsible: vec![
-                "function_definition",
-                "class_definition",
-            ],
+            collapsible: vec!["function_definition", "class_definition"],
             body_kinds: vec![
                 ("function_definition", "block"),
                 ("class_definition", "block"),
@@ -85,10 +82,7 @@ pub fn get_rules(lang: Language) -> SkeletonRules {
             ],
         },
         Language::Rust => SkeletonRules {
-            collapsible: vec![
-                "function_item",
-                "impl_item",
-            ],
+            collapsible: vec!["function_item", "impl_item"],
             body_kinds: vec![
                 ("function_item", "block"),
                 ("impl_item", "declaration_list"),
@@ -108,29 +102,17 @@ pub fn get_rules(lang: Language) -> SkeletonRules {
             ],
         },
         Language::Html => SkeletonRules {
-            collapsible: vec![
-                "script_element",
-                "style_element",
-            ],
+            collapsible: vec!["script_element", "style_element"],
             body_kinds: vec![
                 ("script_element", "raw_text"),
                 ("style_element", "raw_text"),
             ],
             removable: vec!["comment"],
-            significant_children: vec![
-                "element",
-                "script_element",
-                "style_element",
-                "doctype",
-            ],
+            significant_children: vec!["element", "script_element", "style_element", "doctype"],
         },
         Language::C => SkeletonRules {
-            collapsible: vec![
-                "function_definition",
-            ],
-            body_kinds: vec![
-                ("function_definition", "compound_statement"),
-            ],
+            collapsible: vec!["function_definition"],
+            body_kinds: vec![("function_definition", "compound_statement")],
             removable: vec!["comment"],
             significant_children: vec![
                 "function_definition",
@@ -142,10 +124,7 @@ pub fn get_rules(lang: Language) -> SkeletonRules {
             ],
         },
         Language::Cpp => SkeletonRules {
-            collapsible: vec![
-                "function_definition",
-                "namespace_definition",
-            ],
+            collapsible: vec!["function_definition", "namespace_definition"],
             body_kinds: vec![
                 ("function_definition", "compound_statement"),
                 ("namespace_definition", "declaration_list"),

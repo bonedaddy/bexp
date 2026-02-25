@@ -16,7 +16,15 @@ impl LanguageExtractor for PythonExtractor {
         let mut unresolved_refs = Vec::new();
 
         let root = tree.root_node();
-        extract_from_node(root, source, file_path, &mut nodes, &mut edges, &mut unresolved_refs, None);
+        extract_from_node(
+            root,
+            source,
+            file_path,
+            &mut nodes,
+            &mut edges,
+            &mut unresolved_refs,
+            None,
+        );
 
         ExtractedFile {
             language: Language::Python,
@@ -65,13 +73,21 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
-            context: None,
+                        context: None,
                     });
                 }
                 extract_calls(node, source, idx, unresolved_refs);
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i as u32) {
-                        extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
+                        extract_from_node(
+                            child,
+                            source,
+                            file_path,
+                            nodes,
+                            edges,
+                            unresolved_refs,
+                            Some(idx),
+                        );
                     }
                 }
                 return;
@@ -87,7 +103,7 @@ fn extract_from_node(
                         target_idx: idx,
                         kind: EdgeKind::Contains,
                         confidence: 1.0,
-            context: None,
+                        context: None,
                     });
                 }
                 // Check for base classes
@@ -102,7 +118,7 @@ fn extract_from_node(
                                     target_qualified_name: None,
                                     edge_kind: EdgeKind::Extends,
                                     import_path: None,
-            context: None,
+                                    context: None,
                                 });
                             }
                         }
@@ -110,7 +126,15 @@ fn extract_from_node(
                 }
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i as u32) {
-                        extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, Some(idx));
+                        extract_from_node(
+                            child,
+                            source,
+                            file_path,
+                            nodes,
+                            edges,
+                            unresolved_refs,
+                            Some(idx),
+                        );
                     }
                 }
                 return;
@@ -133,7 +157,15 @@ fn extract_from_node(
 
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i as u32) {
-            extract_from_node(child, source, file_path, nodes, edges, unresolved_refs, parent_idx);
+            extract_from_node(
+                child,
+                source,
+                file_path,
+                nodes,
+                edges,
+                unresolved_refs,
+                parent_idx,
+            );
         }
     }
 }
@@ -142,10 +174,7 @@ fn extract_function(node: Node, source: &str, file_path: &str) -> Option<Extract
     let name_node = find_child_by_kind(node, "identifier")?;
     let name = get_node_text(name_node, source).to_string();
 
-    let is_method = node
-        .parent()
-        .map(|p| p.kind() == "block")
-        .unwrap_or(false)
+    let is_method = node.parent().map(|p| p.kind() == "block").unwrap_or(false)
         && node
             .parent()
             .and_then(|p| p.parent())
@@ -162,8 +191,8 @@ fn extract_function(node: Node, source: &str, file_path: &str) -> Option<Extract
         .map(|p| get_node_text(p, source).to_string())
         .unwrap_or_else(|| "()".to_string());
 
-    let return_type = find_child_by_kind(node, "type")
-        .map(|t| format!(" -> {}", get_node_text(t, source)));
+    let return_type =
+        find_child_by_kind(node, "type").map(|t| format!(" -> {}", get_node_text(t, source)));
 
     let signature = format!("def {}{}{}", name, params, return_type.unwrap_or_default());
     let qualified_name = format!("{}::{}", file_path, name);
@@ -180,7 +209,12 @@ fn extract_function(node: Node, source: &str, file_path: &str) -> Option<Extract
         })
         .and_then(|expr| {
             if expr.kind() == "string" {
-                Some(get_node_text(expr, source).trim_matches('"').trim_matches('\'').to_string())
+                Some(
+                    get_node_text(expr, source)
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .to_string(),
+                )
             } else {
                 None
             }
@@ -206,7 +240,7 @@ fn extract_function(node: Node, source: &str, file_path: &str) -> Option<Extract
         col_end: node.end_position().column,
         visibility,
         is_export: false,
-            metadata: None,
+        metadata: None,
     })
 }
 
@@ -226,7 +260,12 @@ fn extract_class(node: Node, source: &str, file_path: &str) -> Option<ExtractedN
         })
         .and_then(|expr| {
             if expr.kind() == "string" {
-                Some(get_node_text(expr, source).trim_matches('"').trim_matches('\'').to_string())
+                Some(
+                    get_node_text(expr, source)
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .to_string(),
+                )
             } else {
                 None
             }
@@ -244,7 +283,7 @@ fn extract_class(node: Node, source: &str, file_path: &str) -> Option<ExtractedN
         col_end: node.end_position().column,
         visibility: Some("public".to_string()),
         is_export: false,
-            metadata: None,
+        metadata: None,
     })
 }
 
@@ -258,8 +297,8 @@ fn extract_import(
     let text = get_node_text(node, source).to_string();
 
     // Extract module name
-    let module_name = find_child_by_kind(node, "dotted_name")
-        .map(|n| get_node_text(n, source).to_string());
+    let module_name =
+        find_child_by_kind(node, "dotted_name").map(|n| get_node_text(n, source).to_string());
 
     let idx = nodes.len();
     nodes.push(ExtractedNode {
@@ -274,7 +313,7 @@ fn extract_import(
         col_end: node.end_position().column,
         visibility: None,
         is_export: false,
-            metadata: None,
+        metadata: None,
     });
 
     // Extract imported names
@@ -290,7 +329,7 @@ fn extract_import(
                             target_qualified_name: None,
                             edge_kind: EdgeKind::Imports,
                             import_path: module_name.clone(),
-            context: None,
+                            context: None,
                         });
                     }
                 }
@@ -302,7 +341,7 @@ fn extract_import(
                     target_qualified_name: None,
                     edge_kind: EdgeKind::Imports,
                     import_path: module_name.clone(),
-            context: None,
+                    context: None,
                 });
             }
         }
@@ -336,7 +375,13 @@ fn extract_assignment(node: Node, source: &str, file_path: &str) -> Option<Extra
         kind: NodeKind::Constant,
         name,
         qualified_name: Some(qualified_name),
-        signature: Some(get_node_text(actual, source).lines().next().unwrap_or("").to_string()),
+        signature: Some(
+            get_node_text(actual, source)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .to_string(),
+        ),
         docstring: None,
         line_start: actual.start_position().row + 1,
         line_end: actual.end_position().row + 1,
@@ -344,7 +389,7 @@ fn extract_assignment(node: Node, source: &str, file_path: &str) -> Option<Extra
         col_end: actual.end_position().column,
         visibility: Some("public".to_string()),
         is_export: false,
-            metadata: None,
+        metadata: None,
     })
 }
 

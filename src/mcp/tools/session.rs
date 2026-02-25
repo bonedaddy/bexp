@@ -1,9 +1,9 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
-use crate::mcp::server::{SessionParams, bexpServer};
+use crate::mcp::server::{BexpServer, SessionParams};
 
 pub async fn handle(
-    server: &bexpServer,
+    server: &BexpServer,
     params: SessionParams,
 ) -> Result<CallToolResult, ErrorData> {
     let include_previous = params.include_previous.unwrap_or(false);

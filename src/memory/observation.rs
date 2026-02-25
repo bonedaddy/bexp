@@ -58,11 +58,7 @@ pub fn get_observations_for_session(
     Ok(rows)
 }
 
-pub fn link_observation_symbol(
-    conn: &Connection,
-    observation_id: i64,
-    node_id: i64,
-) -> Result<()> {
+pub fn link_observation_symbol(conn: &Connection, observation_id: i64, node_id: i64) -> Result<()> {
     conn.execute(
         "INSERT OR IGNORE INTO observation_symbols (observation_id, node_id)
          VALUES (?1, ?2)",

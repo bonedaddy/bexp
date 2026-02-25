@@ -75,8 +75,7 @@ fn get_preceding_comment(node: Node, source: &str) -> Option<String> {
 }
 
 fn extract_visibility(node: Node, source: &str) -> Option<String> {
-    find_child_by_kind(node, "visibility_modifier")
-        .map(|v| get_node_text(v, source).to_string())
+    find_child_by_kind(node, "visibility_modifier").map(|v| get_node_text(v, source).to_string())
 }
 
 /// Extract #[derive(...)] and #[cfg(...)] attributes from preceding attribute items.
@@ -117,10 +116,7 @@ fn extract_attributes(
                             });
                         }
 
-                        metadata.insert(
-                            "derive".to_string(),
-                            derives.join(", "),
-                        );
+                        metadata.insert("derive".to_string(), derives.join(", "));
                     }
                 }
             }
@@ -249,11 +245,7 @@ fn detect_call_context(node: Node) -> Option<String> {
     None
 }
 
-fn push_contains_edge(
-    edges: &mut Vec<ExtractedEdge>,
-    parent: usize,
-    child: usize,
-) {
+fn push_contains_edge(edges: &mut Vec<ExtractedEdge>, parent: usize, child: usize) {
     edges.push(ExtractedEdge {
         source_idx: parent,
         target_idx: child,
@@ -300,7 +292,9 @@ fn extract_from_node(
         }
         "struct_item" => {
             let expected_idx = nodes.len();
-            if let Some(extracted) = extract_struct(node, source, file_path, expected_idx, unresolved_refs) {
+            if let Some(extracted) =
+                extract_struct(node, source, file_path, expected_idx, unresolved_refs)
+            {
                 let idx = nodes.len();
                 let struct_idx = idx;
                 nodes.push(extracted);
@@ -670,8 +664,7 @@ fn extract_enum_variants(
             if child.kind() == "enum_variant" {
                 if let Some(name_node) = find_child_by_kind(child, "identifier") {
                     let variant_name = get_node_text(name_node, source).to_string();
-                    let qualified_name =
-                        format!("{}::{}::{}", file_path, enum_name, variant_name);
+                    let qualified_name = format!("{}::{}::{}", file_path, enum_name, variant_name);
 
                     let idx = nodes.len();
                     nodes.push(ExtractedNode {

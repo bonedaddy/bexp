@@ -10,7 +10,7 @@ use petgraph::Direction;
 use rusqlite::Connection;
 
 use crate::db::queries;
-use crate::error::{Result, bexpError};
+use crate::error::{BexpError, Result};
 use crate::types::{EdgeKind, NodeKind};
 
 #[derive(Debug, Clone)]
@@ -55,9 +55,18 @@ impl GraphEngine {
 
         let pagerank = centrality::compute_pagerank(&graph, 0.85, 20, 1e-6);
 
-        *self.graph.write().map_err(|_| bexpError::Graph("lock poisoned".into()))? = graph;
-        *self.id_to_index.write().map_err(|_| bexpError::Graph("lock poisoned".into()))? = id_map;
-        *self.pagerank.write().map_err(|_| bexpError::Graph("lock poisoned".into()))? = pagerank;
+        *self
+            .graph
+            .write()
+            .map_err(|_| BexpError::Graph("lock poisoned".into()))? = graph;
+        *self
+            .id_to_index
+            .write()
+            .map_err(|_| BexpError::Graph("lock poisoned".into()))? = id_map;
+        *self
+            .pagerank
+            .write()
+            .map_err(|_| BexpError::Graph("lock poisoned".into()))? = pagerank;
 
         Ok(())
     }
@@ -97,17 +106,19 @@ impl GraphEngine {
         depth: usize,
         edge_kinds: Option<&[String]>,
     ) -> Result<String> {
-        let graph = self.graph.read().map_err(|_| bexpError::Graph("lock poisoned".into()))?;
+        let graph = self
+            .graph
+            .read()
+            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
 
         // Find the node
         let node_idx = graph
             .node_indices()
             .find(|&idx| {
                 let node = &graph[idx];
-                node.name == symbol
-                    || node.qualified_name.as_deref() == Some(symbol)
+                node.name == symbol || node.qualified_name.as_deref() == Some(symbol)
             })
-            .ok_or_else(|| bexpError::NotFound(format!("Symbol not found: {}", symbol)))?;
+            .ok_or_else(|| BexpError::NotFound(format!("Symbol not found: {}", symbol)))?;
 
         let result = match direction {
             "callers" => traversal::get_callers(&graph, node_idx, depth, edge_kinds),
@@ -118,14 +129,22 @@ impl GraphEngine {
                 result.push_str(&traversal::get_callees(&graph, node_idx, depth, edge_kinds));
                 result
             }
-            _ => return Err(bexpError::Graph(format!("Invalid direction: {}", direction))),
+            _ => {
+                return Err(BexpError::Graph(format!(
+                    "Invalid direction: {}",
+                    direction
+                )))
+            }
         };
 
         Ok(result)
     }
 
     pub fn find_paths(&self, from: &str, to: &str, max_depth: usize) -> Result<String> {
-        let graph = self.graph.read().map_err(|_| bexpError::Graph("lock poisoned".into()))?;
+        let graph = self
+            .graph
+            .read()
+            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
 
         let from_idx = graph
             .node_indices()
@@ -133,7 +152,7 @@ impl GraphEngine {
                 let node = &graph[idx];
                 node.name == from || node.qualified_name.as_deref() == Some(from)
             })
-            .ok_or_else(|| bexpError::NotFound(format!("Source symbol not found: {}", from)))?;
+            .ok_or_else(|| BexpError::NotFound(format!("Source symbol not found: {}", from)))?;
 
         let to_idx = graph
             .node_indices()
@@ -141,7 +160,7 @@ impl GraphEngine {
                 let node = &graph[idx];
                 node.name == to || node.qualified_name.as_deref() == Some(to)
             })
-            .ok_or_else(|| bexpError::NotFound(format!("Target symbol not found: {}", to)))?;
+            .ok_or_else(|| BexpError::NotFound(format!("Target symbol not found: {}", to)))?;
 
         let paths = traversal::find_all_paths(&graph, from_idx, to_idx, max_depth);
 
@@ -206,7 +225,9 @@ impl GraphEngine {
                     }
                 }
                 Some((
-                    node.qualified_name.clone().unwrap_or_else(|| node.name.clone()),
+                    node.qualified_name
+                        .clone()
+                        .unwrap_or_else(|| node.name.clone()),
                     node.kind.as_str().to_string(),
                     score,
                 ))
@@ -264,9 +285,7 @@ impl GraphEngine {
                     let neighbor_db_id = graph[neighbor].db_id;
 
                     // Skip if already included or already seen
-                    if included_node_ids.contains(&neighbor_db_id)
-                        || !seen.insert(neighbor_db_id)
-                    {
+                    if included_node_ids.contains(&neighbor_db_id) || !seen.insert(neighbor_db_id) {
                         continue;
                     }
 
@@ -292,11 +311,7 @@ impl GraphEngine {
 
     /// Incrementally update the graph for changed files instead of full rebuild.
     /// Falls back to full rebuild if >20% of nodes are affected.
-    pub fn incremental_update(
-        &self,
-        conn: &Connection,
-        changed_file_ids: &[i64],
-    ) -> Result<()> {
+    pub fn incremental_update(&self, conn: &Connection, changed_file_ids: &[i64]) -> Result<()> {
         let total_nodes = self.node_count();
 
         // Get nodes belonging to changed files
@@ -312,15 +327,24 @@ impl GraphEngine {
             return self.build_from_db(conn);
         }
 
-        let mut graph = self.graph.write().map_err(|_| bexpError::Graph("lock poisoned".into()))?;
-        let mut id_map = self.id_to_index.write().map_err(|_| bexpError::Graph("lock poisoned".into()))?;
+        let mut graph = self
+            .graph
+            .write()
+            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
+        let mut id_map = self
+            .id_to_index
+            .write()
+            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
 
         // Collect indices to remove: all nodes belonging to changed files
         let changed_file_set: HashSet<i64> = changed_file_ids.iter().copied().collect();
         let mut indices_to_remove: Vec<NodeIndex> = Vec::new();
 
         for (_, &idx) in id_map.iter() {
-            if graph.node_weight(idx).is_some_and(|n| changed_file_set.contains(&n.file_id)) {
+            if graph
+                .node_weight(idx)
+                .is_some_and(|n| changed_file_set.contains(&n.file_id))
+            {
                 indices_to_remove.push(idx);
             }
         }
@@ -377,10 +401,16 @@ impl GraphEngine {
         drop(id_map);
 
         // Recompute PageRank (global property, must be full)
-        let graph_ref = self.graph.read().map_err(|_| bexpError::Graph("lock poisoned".into()))?;
+        let graph_ref = self
+            .graph
+            .read()
+            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
         let pagerank = centrality::compute_pagerank(&graph_ref, 0.85, 20, 1e-6);
         drop(graph_ref);
-        *self.pagerank.write().map_err(|_| bexpError::Graph("lock poisoned".into()))? = pagerank;
+        *self
+            .pagerank
+            .write()
+            .map_err(|_| BexpError::Graph("lock poisoned".into()))? = pagerank;
 
         tracing::info!(
             "Incremental graph update: removed {} old nodes, added {} new nodes",
@@ -408,7 +438,23 @@ mod tests {
     }
 
     fn insert_node(conn: &Connection, file_id: i64, name: &str) -> i64 {
-        queries::insert_node(conn, file_id, "function", name, None, None, None, 1, 10, 0, 0, Some("pub"), true, None).unwrap()
+        queries::insert_node(
+            conn,
+            file_id,
+            "function",
+            name,
+            None,
+            None,
+            None,
+            1,
+            10,
+            0,
+            0,
+            Some("pub"),
+            true,
+            None,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -533,6 +579,9 @@ mod tests {
         let included: HashSet<i64> = [a, b].into_iter().collect();
         let bridges = graph.get_bridge_candidates(&pivots, &included);
 
-        assert!(bridges.is_empty(), "B should not be a bridge candidate since it's already included");
+        assert!(
+            bridges.is_empty(),
+            "B should not be a bridge candidate since it's already included"
+        );
     }
 }

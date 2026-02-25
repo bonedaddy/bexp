@@ -1,8 +1,8 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
-use crate::mcp::server::bexpServer;
+use crate::mcp::server::BexpServer;
 
-pub async fn handle(server: &bexpServer) -> Result<CallToolResult, ErrorData> {
+pub async fn handle(server: &BexpServer) -> Result<CallToolResult, ErrorData> {
     let config = &server.config;
 
     let mut output = String::from("# bexp Configuration\n\n");

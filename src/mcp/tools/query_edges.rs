@@ -1,10 +1,10 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::db::queries;
-use crate::mcp::server::{QueryEdgesParams, bexpServer};
+use crate::mcp::server::{BexpServer, QueryEdgesParams};
 
 pub async fn handle(
-    server: &bexpServer,
+    server: &BexpServer,
     params: QueryEdgesParams,
 ) -> Result<CallToolResult, ErrorData> {
     if let Some(result) = super::wait_for_index(&server.indexer).await {
@@ -40,7 +40,11 @@ pub async fn handle(
             .target_qualified_name
             .as_deref()
             .unwrap_or(&edge.target_name);
-        let ctx = edge.context.as_deref().map(|c| format!(" [{}]", c)).unwrap_or_default();
+        let ctx = edge
+            .context
+            .as_deref()
+            .map(|c| format!(" [{}]", c))
+            .unwrap_or_default();
         output.push_str(&format!(
             "- `{}` —[{}]→ `{}` (confidence: {:.2}){}\n  {} → {}\n",
             src, edge.kind, tgt, edge.confidence, ctx, edge.source_file, edge.target_file,

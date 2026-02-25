@@ -9,21 +9,32 @@ use super::intent::intent_weights;
 
 /// Common English stop words shared by FTS sanitization and term extraction.
 const STOP_WORDS: &[&str] = &[
-    "the", "a", "an", "is", "are", "was", "were", "be", "been",
-    "being", "have", "has", "had", "do", "does", "did", "will",
-    "would", "could", "should", "may", "might", "can", "shall",
-    "to", "of", "in", "for", "on", "with", "at", "by", "from",
-    "it", "this", "that", "these", "those", "i", "me", "my",
-    "we", "our", "you", "your", "he", "she", "they", "them",
-    "what", "which", "who", "when", "where", "why", "how",
-    "not", "no", "nor", "and", "or", "but", "if", "then",
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might", "can", "shall", "to",
+    "of", "in", "for", "on", "with", "at", "by", "from", "it", "this", "that", "these", "those",
+    "i", "me", "my", "we", "our", "you", "your", "he", "she", "they", "them", "what", "which",
+    "who", "when", "where", "why", "how", "not", "no", "nor", "and", "or", "but", "if", "then",
 ];
 
 /// Additional code-specific stop words used only in LIKE-fallback term extraction.
 const CODE_STOP_WORDS: &[&str] = &[
-    "implementation", "function", "method", "class", "struct",
-    "code", "file", "module", "type", "interface", "trait",
-    "find", "show", "get", "search", "look", "where",
+    "implementation",
+    "function",
+    "method",
+    "class",
+    "struct",
+    "code",
+    "file",
+    "module",
+    "type",
+    "interface",
+    "trait",
+    "find",
+    "show",
+    "get",
+    "search",
+    "look",
+    "where",
 ];
 
 #[derive(Debug, Clone)]
@@ -47,8 +58,7 @@ pub fn hybrid_search(
     intent: &Intent,
     limit: usize,
 ) -> Result<Vec<SearchResult>> {
-    let (bm25_weight, tfidf_weight, centrality_weight, confidence_weight) =
-        intent_weights(intent);
+    let (bm25_weight, tfidf_weight, centrality_weight, confidence_weight) = intent_weights(intent);
 
     // 1. FTS5 BM25 search
     let fts_query = sanitize_fts_query(query);
@@ -57,7 +67,10 @@ pub fn hybrid_search(
     // 2. If FTS5 found nothing, fall back to LIKE-based search on names, qualified names,
     //    file paths, and signatures
     let fts_results = if fts_results.is_empty() {
-        tracing::debug!("FTS5 returned no results for '{}', falling back to LIKE search", query);
+        tracing::debug!(
+            "FTS5 returned no results for '{}', falling back to LIKE search",
+            query
+        );
         fallback_like_search(conn, query, limit * 2)?
     } else {
         fts_results
@@ -119,7 +132,11 @@ pub fn hybrid_search(
     }
 
     // Sort by score descending
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(limit);
 
     Ok(results)
@@ -128,11 +145,7 @@ pub fn hybrid_search(
 /// Fallback LIKE-based search when FTS5 returns nothing.
 /// Searches node names, qualified names, file paths, and signatures
 /// for any of the query terms.
-fn fallback_like_search(
-    conn: &Connection,
-    query: &str,
-    limit: usize,
-) -> Result<Vec<(i64, f64)>> {
+fn fallback_like_search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<(i64, f64)>> {
     let terms = extract_search_terms(query);
     if terms.is_empty() {
         return Ok(Vec::new());
@@ -179,9 +192,16 @@ fn fallback_like_search(
         .collect::<Vec<_>>();
 
     if rows.is_empty() {
-        tracing::debug!("LIKE fallback also returned no results for terms: {:?}", terms);
+        tracing::debug!(
+            "LIKE fallback also returned no results for terms: {:?}",
+            terms
+        );
     } else {
-        tracing::debug!("LIKE fallback found {} results for terms: {:?}", rows.len(), terms);
+        tracing::debug!(
+            "LIKE fallback found {} results for terms: {:?}",
+            rows.len(),
+            terms
+        );
     }
 
     Ok(rows)
@@ -240,9 +260,7 @@ fn compute_tfidf_score(query: &str, name: &str, signature: Option<&str>) -> f64 
         .collect();
 
     let name_lower = name.to_lowercase();
-    let sig_lower = signature
-        .map(|s| s.to_lowercase())
-        .unwrap_or_default();
+    let sig_lower = signature.map(|s| s.to_lowercase()).unwrap_or_default();
 
     let mut matches = 0.0;
     for term in &query_terms {

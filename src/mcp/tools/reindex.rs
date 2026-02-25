@@ -2,10 +2,10 @@ use std::path::PathBuf;
 
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
-use crate::mcp::server::{ReindexParams, bexpServer};
+use crate::mcp::server::{BexpServer, ReindexParams};
 
 pub async fn handle(
-    server: &bexpServer,
+    server: &BexpServer,
     params: ReindexParams,
 ) -> Result<CallToolResult, ErrorData> {
     let report = if params.full.unwrap_or(false) || params.files.is_none() {

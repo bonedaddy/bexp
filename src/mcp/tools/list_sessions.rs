@@ -1,10 +1,10 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::db::queries;
-use crate::mcp::server::{ListSessionsParams, bexpServer};
+use crate::mcp::server::{BexpServer, ListSessionsParams};
 
 pub async fn handle(
-    server: &bexpServer,
+    server: &BexpServer,
     params: ListSessionsParams,
 ) -> Result<CallToolResult, ErrorData> {
     let limit = params.limit.unwrap_or(20);
@@ -21,7 +21,11 @@ pub async fn handle(
 
     let mut output = format!("# Sessions ({} results)\n\n", results.len());
     for session in &results {
-        let compressed = if session.compressed { " [compressed]" } else { "" };
+        let compressed = if session.compressed {
+            " [compressed]"
+        } else {
+            ""
+        };
         let summary = session
             .summary
             .as_deref()

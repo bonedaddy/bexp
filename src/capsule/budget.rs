@@ -110,15 +110,22 @@ pub fn allocate(
     // Build file score map from search results
     let mut file_scores: HashMap<i64, f64> = HashMap::new();
     for result in search_results {
-        file_scores.entry(result.file_id)
-            .and_modify(|s| { if result.score > *s { *s = result.score; } })
+        file_scores
+            .entry(result.file_id)
+            .and_modify(|s| {
+                if result.score > *s {
+                    *s = result.score;
+                }
+            })
             .or_insert(result.score);
     }
 
     // Sort files by highest score
     let mut file_order: Vec<i64> = file_groups.keys().copied().collect();
     file_order.sort_by(|a, b| {
-        file_scores.get(b).unwrap_or(&0.0)
+        file_scores
+            .get(b)
+            .unwrap_or(&0.0)
             .partial_cmp(file_scores.get(a).unwrap_or(&0.0))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
@@ -155,8 +162,8 @@ pub fn allocate(
         let matched_count = ranges.len();
 
         // Decide: full file or excerpt
-        let use_full_file = total_lines < 50
-            || (total_node_count > 0 && matched_count * 2 >= total_node_count);
+        let use_full_file =
+            total_lines < 50 || (total_node_count > 0 && matched_count * 2 >= total_node_count);
 
         if use_full_file {
             let tokens = skeletonizer.count_tokens(&content);

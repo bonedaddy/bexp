@@ -19,11 +19,11 @@ mod skeleton;
 mod types;
 mod workspace;
 
-use config::bexpConfig;
+use config::BexpConfig;
 use db::Database;
 use graph::GraphEngine;
 use indexer::IndexerService;
-use mcp::server::bexpServer;
+use mcp::server::BexpServer;
 use memory::MemoryService;
 use skeleton::Skeletonizer;
 
@@ -90,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::FlushWal { workspace } => {
             let workspace_root =
                 workspace.unwrap_or_else(|| std::env::current_dir().expect("Cannot get cwd"));
-            let config = bexpConfig::load(&workspace_root)?;
+            let config = BexpConfig::load(&workspace_root)?;
             let db = Database::open(&config.db_path(&workspace_root))?;
             db.flush_wal()?;
             eprintln!("WAL flushed.");
@@ -106,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn index_workspace(workspace_root: &std::path::Path) -> anyhow::Result<()> {
-    let config = Arc::new(bexpConfig::load(workspace_root)?);
+    let config = Arc::new(BexpConfig::load(workspace_root)?);
     let db = Arc::new(Database::open(&config.db_path(workspace_root))?);
     let indexer = IndexerService::new(db.clone(), config.clone(), workspace_root.to_path_buf());
 
@@ -122,7 +122,7 @@ fn index_workspace(workspace_root: &std::path::Path) -> anyhow::Result<()> {
 async fn serve(workspace_root: PathBuf) -> anyhow::Result<()> {
     tracing::info!("Starting bexp server for {}", workspace_root.display());
 
-    let config = Arc::new(bexpConfig::load(&workspace_root)?);
+    let config = Arc::new(BexpConfig::load(&workspace_root)?);
     let db = Arc::new(Database::open(&config.db_path(&workspace_root))?);
 
     // Build services
@@ -216,7 +216,7 @@ async fn serve(workspace_root: PathBuf) -> anyhow::Result<()> {
     });
 
     // Create MCP server
-    let server = bexpServer::new(
+    let server = BexpServer::new(
         db.clone(),
         config.clone(),
         indexer.clone(),

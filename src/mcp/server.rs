@@ -8,16 +8,16 @@ use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 use serde::Deserialize;
 
 use crate::capsule::CapsuleGenerator;
-use crate::config::bexpConfig;
+use crate::config::BexpConfig;
 use crate::db::Database;
 use crate::graph::GraphEngine;
 use crate::indexer::IndexerService;
 use crate::memory::MemoryService;
 use crate::skeleton::Skeletonizer;
 
-pub struct bexpServer {
+pub struct BexpServer {
     pub db: Arc<Database>,
-    pub config: Arc<bexpConfig>,
+    pub config: Arc<BexpConfig>,
     pub indexer: Arc<IndexerService>,
     pub graph: Arc<GraphEngine>,
     pub skeletonizer: Arc<Skeletonizer>,
@@ -37,7 +37,9 @@ pub struct CapsuleParams {
     pub token_budget: Option<usize>,
     #[schemars(description = "Session ID for memory integration")]
     pub session_id: Option<String>,
-    #[schemars(description = "Override auto-detected intent: 'debug', 'blast_radius', 'modify', 'explore'")]
+    #[schemars(
+        description = "Override auto-detected intent: 'debug', 'blast_radius', 'modify', 'explore'"
+    )]
     pub intent: Option<String>,
 }
 
@@ -128,7 +130,9 @@ pub struct ObserveParams {
 pub struct QueryNodesParams {
     #[schemars(description = "Search term to match against symbol names")]
     pub query: Option<String>,
-    #[schemars(description = "Filter by node kind: function, method, class, struct, interface, enum, trait, impl, module, variable, constant, import")]
+    #[schemars(
+        description = "Filter by node kind: function, method, class, struct, interface, enum, trait, impl, module, variable, constant, import"
+    )]
     pub kind: Option<String>,
     #[schemars(description = "Filter by file path (substring match)")]
     pub file_path: Option<String>,
@@ -146,7 +150,9 @@ pub struct QueryNodesParams {
 pub struct QueryEdgesParams {
     #[schemars(description = "Symbol name to filter edges by")]
     pub symbol: Option<String>,
-    #[schemars(description = "Filter by edge kind: calls, imports, implements, extends, type_ref, contains")]
+    #[schemars(
+        description = "Filter by edge kind: calls, imports, implements, extends, type_ref, contains"
+    )]
     pub kind: Option<String>,
     #[schemars(description = "Minimum confidence threshold (0.0 - 1.0)")]
     pub min_confidence: Option<f64>,
@@ -166,7 +172,9 @@ pub struct GraphStatsParams {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ListFilesParams {
-    #[schemars(description = "Filter by language: typescript, javascript, python, rust, html, c, cpp")]
+    #[schemars(
+        description = "Filter by language: typescript, javascript, python, rust, html, c, cpp"
+    )]
     pub language: Option<String>,
     #[schemars(description = "Sort by: 'path' (default), 'size', 'tokens', 'indexed_at'")]
     pub sort_by: Option<String>,
@@ -197,11 +205,11 @@ pub struct ReindexParams {
 }
 
 #[tool_router]
-impl bexpServer {
+impl BexpServer {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: Arc<Database>,
-        config: Arc<bexpConfig>,
+        config: Arc<BexpConfig>,
         indexer: Arc<IndexerService>,
         graph: Arc<GraphEngine>,
         skeletonizer: Arc<Skeletonizer>,
@@ -222,7 +230,9 @@ impl bexpServer {
         }
     }
 
-    #[tool(description = "Get a token-efficient context capsule for a query. Uses hybrid search (FTS5 + graph centrality) with intent detection to return full pivot files + skeletonized supporting files within a token budget.")]
+    #[tool(
+        description = "Get a token-efficient context capsule for a query. Uses hybrid search (FTS5 + graph centrality) with intent detection to return full pivot files + skeletonized supporting files within a token budget."
+    )]
     async fn get_context_capsule(
         &self,
         Parameters(params): Parameters<CapsuleParams>,
@@ -230,7 +240,9 @@ impl bexpServer {
         super::tools::capsule::handle(self, params).await
     }
 
-    #[tool(description = "Get the impact graph of a symbol showing callers, callees, or dependents up to N depth. Useful for understanding blast radius of changes. Optionally filter by edge kinds.")]
+    #[tool(
+        description = "Get the impact graph of a symbol showing callers, callees, or dependents up to N depth. Useful for understanding blast radius of changes. Optionally filter by edge kinds."
+    )]
     async fn get_impact_graph(
         &self,
         Parameters(params): Parameters<ImpactParams>,
@@ -238,7 +250,9 @@ impl bexpServer {
         super::tools::impact::handle(self, params).await
     }
 
-    #[tool(description = "Find execution paths between two symbols across files. Returns all paths up to max_depth hops.")]
+    #[tool(
+        description = "Find execution paths between two symbols across files. Returns all paths up to max_depth hops."
+    )]
     async fn search_logic_flow(
         &self,
         Parameters(params): Parameters<FlowParams>,
@@ -246,7 +260,9 @@ impl bexpServer {
         super::tools::flow::handle(self, params).await
     }
 
-    #[tool(description = "Get a token-efficient skeleton of a file. Replaces function/method bodies with { ... } while preserving signatures, types, and structure. Levels: minimal (85-95% reduction), standard (70-85%), detailed (50-70%).")]
+    #[tool(
+        description = "Get a token-efficient skeleton of a file. Replaces function/method bodies with { ... } while preserving signatures, types, and structure. Levels: minimal (85-95% reduction), standard (70-85%), detailed (50-70%)."
+    )]
     async fn get_skeleton(
         &self,
         Parameters(params): Parameters<SkeletonParams>,
@@ -254,12 +270,16 @@ impl bexpServer {
         super::tools::skeleton::handle(self, params).await
     }
 
-    #[tool(description = "Get the current index status: file/node/edge counts, language breakdown, and watcher state.")]
+    #[tool(
+        description = "Get the current index status: file/node/edge counts, language breakdown, and watcher state."
+    )]
     async fn index_status(&self) -> Result<CallToolResult, ErrorData> {
         super::tools::status::handle(self).await
     }
 
-    #[tool(description = "Detect project type and generate .bexp/config.toml with appropriate settings.")]
+    #[tool(
+        description = "Detect project type and generate .bexp/config.toml with appropriate settings."
+    )]
     async fn workspace_setup(
         &self,
         Parameters(params): Parameters<SetupParams>,
@@ -267,7 +287,9 @@ impl bexpServer {
         super::tools::setup::handle(self, params).await
     }
 
-    #[tool(description = "Submit type-resolved call edges from LSP to supplement static analysis. Improves graph accuracy for dynamic languages.")]
+    #[tool(
+        description = "Submit type-resolved call edges from LSP to supplement static analysis. Improves graph accuracy for dynamic languages."
+    )]
     async fn submit_lsp_edges(
         &self,
         Parameters(params): Parameters<LspEdgesParams>,
@@ -275,7 +297,9 @@ impl bexpServer {
         super::tools::lsp::handle(self, params).await
     }
 
-    #[tool(description = "Retrieve observations from current or previous sessions with staleness flags. Returns insights linked to code symbols.")]
+    #[tool(
+        description = "Retrieve observations from current or previous sessions with staleness flags. Returns insights linked to code symbols."
+    )]
     async fn get_session_context(
         &self,
         Parameters(params): Parameters<SessionParams>,
@@ -283,7 +307,9 @@ impl bexpServer {
         super::tools::session::handle(self, params).await
     }
 
-    #[tool(description = "Cross-session hybrid search over saved observations. Combines FTS5 BM25 + recency decay (7-day half-life) + graph proximity.")]
+    #[tool(
+        description = "Cross-session hybrid search over saved observations. Combines FTS5 BM25 + recency decay (7-day half-life) + graph proximity."
+    )]
     async fn search_memory(
         &self,
         Parameters(params): Parameters<MemorySearchParams>,
@@ -291,7 +317,9 @@ impl bexpServer {
         super::tools::memory_search::handle(self, params).await
     }
 
-    #[tool(description = "Persist an insight or observation linked to code symbols. Auto-generates headline and summary. Observations persist across sessions and are surfaced in context capsules.")]
+    #[tool(
+        description = "Persist an insight or observation linked to code symbols. Auto-generates headline and summary. Observations persist across sessions and are surfaced in context capsules."
+    )]
     async fn save_observation(
         &self,
         Parameters(params): Parameters<ObserveParams>,
@@ -301,7 +329,9 @@ impl bexpServer {
 
     // -- New tools --
 
-    #[tool(description = "Search and filter code symbols (functions, classes, structs, etc.) with structured queries. Filter by name, kind, file path, visibility, or export status.")]
+    #[tool(
+        description = "Search and filter code symbols (functions, classes, structs, etc.) with structured queries. Filter by name, kind, file path, visibility, or export status."
+    )]
     async fn query_nodes(
         &self,
         Parameters(params): Parameters<QueryNodesParams>,
@@ -309,7 +339,9 @@ impl bexpServer {
         super::tools::query_nodes::handle(self, params).await
     }
 
-    #[tool(description = "Query relationships between symbols with filters. Filter by symbol, edge kind (calls/imports/implements/extends/type_ref/contains), confidence, and direction.")]
+    #[tool(
+        description = "Query relationships between symbols with filters. Filter by symbol, edge kind (calls/imports/implements/extends/type_ref/contains), confidence, and direction."
+    )]
     async fn query_edges(
         &self,
         Parameters(params): Parameters<QueryEdgesParams>,
@@ -317,7 +349,9 @@ impl bexpServer {
         super::tools::query_edges::handle(self, params).await
     }
 
-    #[tool(description = "Get graph topology statistics: node/edge counts, edge kind breakdown, and top-N most central symbols by PageRank.")]
+    #[tool(
+        description = "Get graph topology statistics: node/edge counts, edge kind breakdown, and top-N most central symbols by PageRank."
+    )]
     async fn graph_stats(
         &self,
         Parameters(params): Parameters<GraphStatsParams>,
@@ -325,7 +359,9 @@ impl bexpServer {
         super::tools::graph_stats::handle(self, params).await
     }
 
-    #[tool(description = "List all indexed files with metadata: path, language, size, token count, content hash, and index timestamp.")]
+    #[tool(
+        description = "List all indexed files with metadata: path, language, size, token count, content hash, and index timestamp."
+    )]
     async fn list_files(
         &self,
         Parameters(params): Parameters<ListFilesParams>,
@@ -333,7 +369,9 @@ impl bexpServer {
         super::tools::list_files::handle(self, params).await
     }
 
-    #[tool(description = "Show unresolved cross-file references that couldn't be linked during indexing. Useful for diagnosing graph gaps.")]
+    #[tool(
+        description = "Show unresolved cross-file references that couldn't be linked during indexing. Useful for diagnosing graph gaps."
+    )]
     async fn get_unresolved_refs(
         &self,
         Parameters(params): Parameters<UnresolvedRefsParams>,
@@ -341,7 +379,9 @@ impl bexpServer {
         super::tools::unresolved::handle(self, params).await
     }
 
-    #[tool(description = "List all memory sessions with observation counts, timestamps, and summaries.")]
+    #[tool(
+        description = "List all memory sessions with observation counts, timestamps, and summaries."
+    )]
     async fn list_sessions(
         &self,
         Parameters(params): Parameters<ListSessionsParams>,
@@ -349,7 +389,9 @@ impl bexpServer {
         super::tools::list_sessions::handle(self, params).await
     }
 
-    #[tool(description = "Trigger reindex from MCP. Specify file paths for incremental reindex, or set full=true for complete workspace reindex. Rebuilds the graph after indexing.")]
+    #[tool(
+        description = "Trigger reindex from MCP. Specify file paths for incremental reindex, or set full=true for complete workspace reindex. Rebuilds the graph after indexing."
+    )]
     async fn trigger_reindex(
         &self,
         Parameters(params): Parameters<ReindexParams>,
@@ -357,19 +399,23 @@ impl bexpServer {
         super::tools::reindex::handle(self, params).await
     }
 
-    #[tool(description = "Detect and mark stale observations whose linked files have changed. Also cleans up observations past the TTL.")]
+    #[tool(
+        description = "Detect and mark stale observations whose linked files have changed. Also cleans up observations past the TTL."
+    )]
     async fn detect_staleness(&self) -> Result<CallToolResult, ErrorData> {
         super::tools::staleness::handle(self).await
     }
 
-    #[tool(description = "Show the current bexp configuration: token budget, skeleton level, exclude patterns, memory settings, and more.")]
+    #[tool(
+        description = "Show the current bexp configuration: token budget, skeleton level, exclude patterns, memory settings, and more."
+    )]
     async fn get_config(&self) -> Result<CallToolResult, ErrorData> {
         super::tools::get_config::handle(self).await
     }
 }
 
 #[tool_handler]
-impl ServerHandler for bexpServer {
+impl ServerHandler for BexpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: ProtocolVersion::V_2024_11_05,

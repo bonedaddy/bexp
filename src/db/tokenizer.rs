@@ -144,10 +144,7 @@ mod tests {
 
     #[test]
     fn acronym_splitting() {
-        assert_eq!(
-            tokenize_identifier("HTMLParser"),
-            "html parser htmlparser"
-        );
+        assert_eq!(tokenize_identifier("HTMLParser"), "html parser htmlparser");
     }
 
     #[test]

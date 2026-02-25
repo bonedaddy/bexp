@@ -54,17 +54,14 @@ pub struct IndexStats {
 }
 
 pub fn get_index_stats(conn: &Connection) -> Result<IndexStats> {
-    let file_count: i64 =
-        conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
-    let node_count: i64 =
-        conn.query_row("SELECT COUNT(*) FROM nodes", [], |r| r.get(0))?;
-    let edge_count: i64 =
-        conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
+    let file_count: i64 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
+    let node_count: i64 = conn.query_row("SELECT COUNT(*) FROM nodes", [], |r| r.get(0))?;
+    let edge_count: i64 = conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
     let unresolved_count: i64 =
         conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))?;
 
-    let mut stmt =
-        conn.prepare("SELECT language, COUNT(*) FROM files GROUP BY language ORDER BY COUNT(*) DESC")?;
+    let mut stmt = conn
+        .prepare("SELECT language, COUNT(*) FROM files GROUP BY language ORDER BY COUNT(*) DESC")?;
     let language_breakdown: Vec<(String, i64)> = stmt
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -171,9 +168,21 @@ pub fn insert_node(
                            tokenized_name, tokenized_qualified_name, metadata)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
-            file_id, kind, name, qualified_name, signature, docstring,
-            line_start, line_end, col_start, col_end, visibility, is_export as i32,
-            tokenized_name, tokenized_qname, metadata,
+            file_id,
+            kind,
+            name,
+            qualified_name,
+            signature,
+            docstring,
+            line_start,
+            line_end,
+            col_start,
+            col_end,
+            visibility,
+            is_export as i32,
+            tokenized_name,
+            tokenized_qname,
+            metadata,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -263,7 +272,11 @@ pub fn get_all_edges(conn: &Connection) -> Result<Vec<EdgeRecord>> {
 pub fn search_nodes_fts(conn: &Connection, query: &str, limit: usize) -> Result<Vec<(i64, f64)>> {
     // Tokenize the query so FTS5 can match against tokenized columns
     let tokenized = crate::db::tokenizer::tokenize_query(query);
-    let fts_query = if tokenized.is_empty() { query.to_string() } else { tokenized };
+    let fts_query = if tokenized.is_empty() {
+        query.to_string()
+    } else {
+        tokenized
+    };
 
     let mut stmt = conn.prepare(
         "SELECT rowid, rank FROM nodes_fts WHERE nodes_fts MATCH ?1 ORDER BY rank LIMIT ?2",
@@ -326,8 +339,7 @@ pub fn set_metadata(conn: &Connection, key: &str, value: &str) -> Result<()> {
 }
 
 pub fn get_metadata(conn: &Connection, key: &str) -> Result<Option<String>> {
-    let mut stmt =
-        conn.prepare("SELECT value FROM index_metadata WHERE key = ?1")?;
+    let mut stmt = conn.prepare("SELECT value FROM index_metadata WHERE key = ?1")?;
     let mut rows = stmt.query_map(params![key], |row| row.get(0))?;
     match rows.next() {
         Some(r) => Ok(Some(r?)),
@@ -415,7 +427,8 @@ pub fn query_nodes_filtered(
     bind_values.push(Box::new(limit as i64));
 
     let mut stmt = conn.prepare(&sql)?;
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> = bind_values.iter().map(|b| b.as_ref()).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
     let rows = stmt
         .query_map(params_refs.as_slice(), |row| {
             Ok(NodeQueryResult {
@@ -505,7 +518,8 @@ pub fn query_edges_filtered(
     bind_values.push(Box::new(limit as i64));
 
     let mut stmt = conn.prepare(&sql)?;
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> = bind_values.iter().map(|b| b.as_ref()).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
     let rows = stmt
         .query_map(params_refs.as_slice(), |row| {
             Ok(EdgeQueryResult {
@@ -562,7 +576,8 @@ pub fn list_files_filtered(
     bind_values.push(Box::new(limit as i64));
 
     let mut stmt = conn.prepare(&sql)?;
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> = bind_values.iter().map(|b| b.as_ref()).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
     let rows = stmt
         .query_map(params_refs.as_slice(), |row| {
             Ok(FileListRecord {
@@ -615,7 +630,8 @@ pub fn get_unresolved_refs_filtered(
     bind_values.push(Box::new(limit as i64));
 
     let mut stmt = conn.prepare(&sql)?;
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> = bind_values.iter().map(|b| b.as_ref()).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
     let rows = stmt
         .query_map(params_refs.as_slice(), |row| {
             Ok(UnresolvedRefRecord {
@@ -699,7 +715,8 @@ pub fn get_avg_edge_confidence_batch(
     for &id in node_ids {
         bind_values.push(Box::new(id));
     }
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> = bind_values.iter().map(|b| b.as_ref()).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
 
     let rows = stmt
         .query_map(params_refs.as_slice(), |row| {
@@ -795,10 +812,7 @@ pub fn find_candidate_nodes_by_name(
 
 /// Get all import edges from a file: returns (target_node_id, target_file_id, target_file_path).
 #[allow(dead_code)]
-pub fn get_file_import_targets(
-    conn: &Connection,
-    file_id: i64,
-) -> Result<Vec<ImportTarget>> {
+pub fn get_file_import_targets(conn: &Connection, file_id: i64) -> Result<Vec<ImportTarget>> {
     let mut stmt = conn.prepare(
         "SELECT e.target_node_id, tn.file_id, f.path
          FROM edges e
@@ -821,10 +835,7 @@ pub fn get_file_import_targets(
 }
 
 /// Get node ranges by a set of node IDs (for budget allocation).
-pub fn get_node_ranges_by_ids(
-    conn: &Connection,
-    node_ids: &[i64],
-) -> Result<Vec<NodeRange>> {
+pub fn get_node_ranges_by_ids(conn: &Connection, node_ids: &[i64]) -> Result<Vec<NodeRange>> {
     if node_ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -839,8 +850,10 @@ pub fn get_node_ranges_by_ids(
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    let bind_values: Vec<Box<dyn rusqlite::types::ToSql>> =
-        node_ids.iter().map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>).collect();
+    let bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = node_ids
+        .iter()
+        .map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>)
+        .collect();
     let params_refs: Vec<&dyn rusqlite::types::ToSql> =
         bind_values.iter().map(|b| b.as_ref()).collect();
 
@@ -892,8 +905,10 @@ pub fn get_nodes_with_files_by_ids(
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    let bind_values: Vec<Box<dyn rusqlite::types::ToSql>> =
-        node_ids.iter().map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>).collect();
+    let bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = node_ids
+        .iter()
+        .map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>)
+        .collect();
     let params_refs: Vec<&dyn rusqlite::types::ToSql> =
         bind_values.iter().map(|b| b.as_ref()).collect();
 
@@ -941,8 +956,10 @@ pub fn get_nodes_for_files(conn: &Connection, file_ids: &[i64]) -> Result<Vec<No
     );
 
     let mut stmt = conn.prepare(&sql)?;
-    let bind_values: Vec<Box<dyn rusqlite::types::ToSql>> =
-        file_ids.iter().map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>).collect();
+    let bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = file_ids
+        .iter()
+        .map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>)
+        .collect();
     let params_refs: Vec<&dyn rusqlite::types::ToSql> =
         bind_values.iter().map(|b| b.as_ref()).collect();
 
@@ -1080,4 +1097,3 @@ pub fn get_edges_for_nodes(conn: &Connection, node_ids: &[i64]) -> Result<Vec<Ed
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
 }
-

@@ -69,11 +69,15 @@ impl MemoryService {
 
         // Include previous sessions if requested
         if include_previous {
-            let previous = session::get_previous_sessions(conn, &current_session.id, previous_limit)?;
+            let previous =
+                session::get_previous_sessions(conn, &current_session.id, previous_limit)?;
             if !previous.is_empty() {
                 output.push_str("\n---\n\n## Previous Sessions\n\n");
                 for prev in &previous {
-                    output.push_str(&format!("### Session {} ({})\n\n", prev.id, prev.created_at));
+                    output.push_str(&format!(
+                        "### Session {} ({})\n\n",
+                        prev.id, prev.created_at
+                    ));
                     if let Some(summary) = &prev.summary {
                         output.push_str(&format!("{}\n\n", summary));
                     }
@@ -93,12 +97,7 @@ impl MemoryService {
         Ok(output)
     }
 
-    pub fn search(
-        &self,
-        query: &str,
-        limit: usize,
-        session_id: Option<&str>,
-    ) -> Result<String> {
+    pub fn search(&self, query: &str, limit: usize, session_id: Option<&str>) -> Result<String> {
         let conn = &*self.db.reader();
         let results = search::search_observations(conn, &self.graph, query, limit, session_id)?;
 
@@ -215,23 +214,72 @@ fn find_node_by_name(conn: &rusqlite::Connection, name: &str) -> Option<i64> {
 
 /// Common English words to filter out from PascalCase symbol detection.
 const COMMON_WORDS: &[&str] = &[
-    "The", "This", "That", "These", "Those", "When", "Where", "Which",
-    "What", "With", "Without", "About", "After", "Before", "Between",
-    "During", "From", "Into", "Through", "Under", "Until", "Upon",
-    "Also", "Both", "Each", "Every", "Some", "None", "Many", "Much",
-    "Most", "Other", "Such", "Than", "Then", "Only", "Just", "Even",
-    "Still", "Already", "Always", "Never", "Often", "Sometimes",
-    "However", "Therefore", "Because", "Although", "Whether", "While",
-    "Since", "Though", "Unless", "Once", "Here", "There", "Note",
-    "Todo", "Fixme", "Hack", "Warning", "Error",
+    "The",
+    "This",
+    "That",
+    "These",
+    "Those",
+    "When",
+    "Where",
+    "Which",
+    "What",
+    "With",
+    "Without",
+    "About",
+    "After",
+    "Before",
+    "Between",
+    "During",
+    "From",
+    "Into",
+    "Through",
+    "Under",
+    "Until",
+    "Upon",
+    "Also",
+    "Both",
+    "Each",
+    "Every",
+    "Some",
+    "None",
+    "Many",
+    "Much",
+    "Most",
+    "Other",
+    "Such",
+    "Than",
+    "Then",
+    "Only",
+    "Just",
+    "Even",
+    "Still",
+    "Already",
+    "Always",
+    "Never",
+    "Often",
+    "Sometimes",
+    "However",
+    "Therefore",
+    "Because",
+    "Although",
+    "Whether",
+    "While",
+    "Since",
+    "Though",
+    "Unless",
+    "Once",
+    "Here",
+    "There",
+    "Note",
+    "Todo",
+    "Fixme",
+    "Hack",
+    "Warning",
+    "Error",
 ];
 
 /// Auto-detect symbol names and file paths in observation content and link them.
-fn auto_link_observation(
-    conn: &rusqlite::Connection,
-    obs_id: i64,
-    content: &str,
-) -> Result<()> {
+fn auto_link_observation(conn: &rusqlite::Connection, obs_id: i64, content: &str) -> Result<()> {
     use std::collections::HashSet;
 
     let mut linked_nodes = HashSet::new();
@@ -280,7 +328,16 @@ fn auto_link_observation(
             break;
         }
 
-        let cleaned = word.trim_matches(|c: char| c == '`' || c == '\'' || c == '"' || c == ',' || c == '.' || c == ':' || c == ')' || c == '(');
+        let cleaned = word.trim_matches(|c: char| {
+            c == '`'
+                || c == '\''
+                || c == '"'
+                || c == ','
+                || c == '.'
+                || c == ':'
+                || c == ')'
+                || c == '('
+        });
         if cleaned.contains('/') {
             let path = std::path::Path::new(cleaned);
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
@@ -310,8 +367,19 @@ fn extract_symbol_candidates(content: &str) -> Vec<String> {
     let mut candidates = Vec::new();
     let mut seen = HashSet::new();
 
-    for word in content.split(|c: char| c.is_whitespace() || c == ',' || c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}') {
-        let cleaned = word.trim_matches(|c: char| c == '`' || c == '\'' || c == '"' || c == '.' || c == ':' || c == ';');
+    for word in content.split(|c: char| {
+        c.is_whitespace()
+            || c == ','
+            || c == '('
+            || c == ')'
+            || c == '['
+            || c == ']'
+            || c == '{'
+            || c == '}'
+    }) {
+        let cleaned = word.trim_matches(|c: char| {
+            c == '`' || c == '\'' || c == '"' || c == '.' || c == ':' || c == ';'
+        });
 
         if cleaned.len() < 3 {
             continue;
@@ -323,11 +391,13 @@ fn extract_symbol_candidates(content: &str) -> Vec<String> {
             && cleaned.chars().all(|c| c.is_alphanumeric() || c == '_');
 
         // snake_case or qualified: contains _ or ::
-        let is_snake_or_qualified =
-            (cleaned.contains('_') || cleaned.contains("::"))
-                && cleaned.chars().all(|c| c.is_alphanumeric() || c == '_' || c == ':');
+        let is_snake_or_qualified = (cleaned.contains('_') || cleaned.contains("::"))
+            && cleaned
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == ':');
 
-        if (is_pascal || is_snake_or_qualified) && !common.contains(cleaned)
+        if (is_pascal || is_snake_or_qualified)
+            && !common.contains(cleaned)
             && seen.insert(cleaned.to_string())
         {
             candidates.push(cleaned.to_string());

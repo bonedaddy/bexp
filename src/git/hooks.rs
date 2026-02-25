@@ -1,13 +1,13 @@
 use std::path::Path;
 
-use crate::error::{Result, bexpError};
+use crate::error::{BexpError, Result};
 
 /// Generate git hooks for bexp integration.
 #[allow(dead_code)]
 pub fn generate_hooks(workspace_root: &Path, bexp_binary: &str) -> Result<()> {
     let git_dir = workspace_root.join(".git");
     if !git_dir.exists() {
-        return Err(bexpError::Config("Not a git repository".to_string()));
+        return Err(BexpError::Config("Not a git repository".to_string()));
     }
 
     let hooks_dir = git_dir.join("hooks");
