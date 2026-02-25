@@ -57,11 +57,10 @@ fn get_attribute_value(node: Node, source: &str, attr_name: &str) -> Option<Stri
             if child.kind() == "attribute" {
                 if let Some(name_node) = find_child_by_kind(child, "attribute_name") {
                     if get_node_text(name_node, source) == attr_name {
-                        return find_child_by_kind(child, "quoted_attribute_value")
-                            .map(|v| {
-                                let text = get_node_text(v, source);
-                                text.trim_matches('"').trim_matches('\'').to_string()
-                            });
+                        return find_child_by_kind(child, "quoted_attribute_value").map(|v| {
+                            let text = get_node_text(v, source);
+                            text.trim_matches('"').trim_matches('\'').to_string()
+                        });
                     }
                 }
             }
@@ -94,7 +93,7 @@ fn extract_from_node(
                     col_end: node.end_position().column,
                     visibility: None,
                     is_export: false,
-            metadata: None,
+                    metadata: None,
                 });
                 unresolved_refs.push(UnresolvedRef {
                     source_idx: idx,
@@ -102,7 +101,7 @@ fn extract_from_node(
                     target_qualified_name: None,
                     edge_kind: EdgeKind::Imports,
                     import_path: None,
-            context: None,
+                    context: None,
                 });
             }
         }
@@ -119,7 +118,7 @@ fn extract_from_node(
                 col_end: node.end_position().column,
                 visibility: None,
                 is_export: false,
-            metadata: None,
+                metadata: None,
             });
         }
         "element" => {
@@ -139,7 +138,7 @@ fn extract_from_node(
                             col_end: node.end_position().column,
                             visibility: None,
                             is_export: false,
-            metadata: None,
+                            metadata: None,
                         });
                         unresolved_refs.push(UnresolvedRef {
                             source_idx: idx,
@@ -147,7 +146,7 @@ fn extract_from_node(
                             target_qualified_name: None,
                             edge_kind: EdgeKind::Imports,
                             import_path: None,
-            context: None,
+                            context: None,
                         });
                     }
                 }

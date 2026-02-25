@@ -1,11 +1,11 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::db::queries;
-use crate::mcp::server::{LspEdgesParams, bexpServer};
+use crate::mcp::server::{BexpServer, LspEdgesParams};
 use crate::types::EdgeKind;
 
 pub async fn handle(
-    server: &bexpServer,
+    server: &BexpServer,
     params: LspEdgesParams,
 ) -> Result<CallToolResult, ErrorData> {
     if let Some(result) = super::wait_for_index(&server.indexer).await {
@@ -27,7 +27,8 @@ pub async fn handle(
 
             match (source, target) {
                 (Some(src_id), Some(tgt_id)) => {
-                    if queries::insert_edge(&conn, src_id, tgt_id, edge_kind.as_str(), 0.95, None).is_ok()
+                    if queries::insert_edge(&conn, src_id, tgt_id, edge_kind.as_str(), 0.95, None)
+                        .is_ok()
                     {
                         added += 1;
                     }
@@ -54,10 +55,7 @@ pub async fn handle(
     ))]))
 }
 
-fn find_node_by_qualified_name(
-    conn: &rusqlite::Connection,
-    qualified_name: &str,
-) -> Option<i64> {
+fn find_node_by_qualified_name(conn: &rusqlite::Connection, qualified_name: &str) -> Option<i64> {
     conn.query_row(
         "SELECT id FROM nodes WHERE qualified_name = ?1 LIMIT 1",
         rusqlite::params![qualified_name],

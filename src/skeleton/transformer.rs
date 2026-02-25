@@ -1,4 +1,4 @@
-use crate::error::{bexpError, Result};
+use crate::error::{BexpError, Result};
 use crate::types::{DetailLevel, Language};
 
 pub struct SkeletonTransformer;
@@ -19,11 +19,11 @@ impl SkeletonTransformer {
 
         parser
             .set_language(&ts_language)
-            .map_err(|e| bexpError::Skeleton(format!("Language setup failed: {e}")))?;
+            .map_err(|e| BexpError::Skeleton(format!("Language setup failed: {e}")))?;
 
         let tree = parser
             .parse(source, None)
-            .ok_or_else(|| bexpError::Skeleton("Parse returned None".to_string()))?;
+            .ok_or_else(|| BexpError::Skeleton("Parse returned None".to_string()))?;
 
         let rules = super::languages::get_rules(lang);
         let skeleton = transform_node(tree.root_node(), source, level, &rules, 0);

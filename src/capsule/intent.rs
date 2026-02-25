@@ -5,18 +5,52 @@ pub fn detect_intent(query: &str) -> Intent {
     let lower = query.to_lowercase();
 
     let debug_keywords = [
-        "bug", "fix", "error", "crash", "fail", "broken", "issue",
-        "debug", "wrong", "undefined", "null", "exception", "panic",
-        "stack trace", "backtrace", "not working",
+        "bug",
+        "fix",
+        "error",
+        "crash",
+        "fail",
+        "broken",
+        "issue",
+        "debug",
+        "wrong",
+        "undefined",
+        "null",
+        "exception",
+        "panic",
+        "stack trace",
+        "backtrace",
+        "not working",
     ];
     let blast_keywords = [
-        "impact", "affect", "depend", "change", "refactor", "rename",
-        "delete", "remove", "deprecate", "breaking", "blast radius",
-        "who uses", "what calls", "what depends",
+        "impact",
+        "affect",
+        "depend",
+        "change",
+        "refactor",
+        "rename",
+        "delete",
+        "remove",
+        "deprecate",
+        "breaking",
+        "blast radius",
+        "who uses",
+        "what calls",
+        "what depends",
     ];
     let modify_keywords = [
-        "add", "implement", "create", "update", "modify", "extend",
-        "feature", "enhancement", "new", "build", "write", "change",
+        "add",
+        "implement",
+        "create",
+        "update",
+        "modify",
+        "extend",
+        "feature",
+        "enhancement",
+        "new",
+        "build",
+        "write",
+        "change",
     ];
 
     let debug_score: usize = debug_keywords
@@ -84,7 +118,10 @@ mod tests {
     #[test]
     fn intent_weights_match_expected_profiles() {
         assert_eq!(intent_weights(&Intent::Debug), (0.45, 0.25, 0.15, 0.15));
-        assert_eq!(intent_weights(&Intent::BlastRadius), (0.15, 0.15, 0.45, 0.25));
+        assert_eq!(
+            intent_weights(&Intent::BlastRadius),
+            (0.15, 0.15, 0.45, 0.25)
+        );
         assert_eq!(intent_weights(&Intent::Modify), (0.30, 0.30, 0.20, 0.20));
         assert_eq!(intent_weights(&Intent::Explore), (0.30, 0.30, 0.25, 0.15));
     }

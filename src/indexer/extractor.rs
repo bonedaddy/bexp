@@ -49,12 +49,7 @@ pub struct ExtractedFile {
 }
 
 pub trait LanguageExtractor: Send + Sync {
-    fn extract(
-        &self,
-        tree: &tree_sitter::Tree,
-        source: &str,
-        file_path: &str,
-    ) -> ExtractedFile;
+    fn extract(&self, tree: &tree_sitter::Tree, source: &str, file_path: &str) -> ExtractedFile;
 
     #[allow(dead_code)]
     fn language(&self) -> Language;

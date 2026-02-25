@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use petgraph::graph::{DiGraph, NodeIndex};
 use rusqlite::Connection;
 
-use crate::error::Result;
 use crate::db::queries;
+use crate::error::Result;
 use crate::types::{EdgeKind, NodeKind};
 
 use super::{GraphEdge, GraphNode};
@@ -119,10 +119,14 @@ fn load_cross_workspace_edges(
             idx
         });
 
-        graph.add_edge(src_idx, tgt_idx, GraphEdge {
-            kind: EdgeKind::parse(&kind).unwrap_or(EdgeKind::Calls),
-            confidence,
-        });
+        graph.add_edge(
+            src_idx,
+            tgt_idx,
+            GraphEdge {
+                kind: EdgeKind::parse(&kind).unwrap_or(EdgeKind::Calls),
+                confidence,
+            },
+        );
         count += 1;
     }
 

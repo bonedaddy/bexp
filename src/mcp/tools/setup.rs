@@ -1,11 +1,8 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
-use crate::mcp::server::{SetupParams, bexpServer};
+use crate::mcp::server::{BexpServer, SetupParams};
 
-pub async fn handle(
-    server: &bexpServer,
-    params: SetupParams,
-) -> Result<CallToolResult, ErrorData> {
+pub async fn handle(server: &BexpServer, params: SetupParams) -> Result<CallToolResult, ErrorData> {
     let bexp_dir = server.workspace_root.join(".bexp");
     let config_path = bexp_dir.join("config.toml");
     let force = params.force.unwrap_or(false);
@@ -30,15 +27,17 @@ pub async fn handle(
     // Create .gitignore for .bexp
     let gitignore_path = bexp_dir.join(".gitignore");
     if !gitignore_path.exists() || force {
-        std::fs::write(&gitignore_path, "index.db\nindex.db-wal\nindex.db-shm\n")
-            .map_err(|e| {
-                ErrorData::internal_error(format!("Failed to write .gitignore: {e}"), None)
-            })?;
+        std::fs::write(&gitignore_path, "index.db\nindex.db-wal\nindex.db-shm\n").map_err(|e| {
+            ErrorData::internal_error(format!("Failed to write .gitignore: {e}"), None)
+        })?;
     }
 
     let mut output = String::new();
     output.push_str("# Workspace Setup Complete\n\n");
-    output.push_str(&format!("**Detected project type:** {}\n\n", project_type.name));
+    output.push_str(&format!(
+        "**Detected project type:** {}\n\n",
+        project_type.name
+    ));
     output.push_str("**Created files:**\n");
     output.push_str("- `.bexp/config.toml`\n");
     output.push_str("- `.bexp/.gitignore`\n\n");
@@ -69,7 +68,10 @@ fn detect_project_type(root: &std::path::Path) -> ProjectType {
         } else {
             "javascript-node".into()
         };
-        if root.join("next.config.js").exists() || root.join("next.config.mjs").exists() || root.join("next.config.ts").exists() {
+        if root.join("next.config.js").exists()
+            || root.join("next.config.mjs").exists()
+            || root.join("next.config.ts").exists()
+        {
             name = "nextjs".into();
             extra_excludes.push(".next".into());
         }
@@ -97,7 +99,11 @@ fn detect_project_type(root: &std::path::Path) -> ProjectType {
     }
 
     if languages.is_empty() {
-        languages.extend(["typescript", "javascript", "python", "rust"].iter().map(|s| s.to_string()));
+        languages.extend(
+            ["typescript", "javascript", "python", "rust"]
+                .iter()
+                .map(|s| s.to_string()),
+        );
     }
 
     ProjectType {
@@ -110,7 +116,10 @@ fn detect_project_type(root: &std::path::Path) -> ProjectType {
 fn generate_config(project_type: &ProjectType) -> String {
     let mut config = String::new();
     config.push_str("# bexp Configuration\n");
-    config.push_str(&format!("# Detected project type: {}\n\n", project_type.name));
+    config.push_str(&format!(
+        "# Detected project type: {}\n\n",
+        project_type.name
+    ));
     config.push_str("token_budget = 8000\n");
     config.push_str("default_skeleton_level = \"standard\"\n");
     config.push_str("max_file_size = 1000000\n");
@@ -121,9 +130,18 @@ fn generate_config(project_type: &ProjectType) -> String {
     config.push_str("db_path = \".bexp/index.db\"\n\n");
 
     let mut excludes: Vec<String> = vec![
-        "node_modules", ".git", "target", "dist", "build",
-        "__pycache__", ".venv", "venv", ".next", ".nuxt",
-        "vendor", ".bexp",
+        "node_modules",
+        ".git",
+        "target",
+        "dist",
+        "build",
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".next",
+        ".nuxt",
+        "vendor",
+        ".bexp",
     ]
     .into_iter()
     .map(String::from)

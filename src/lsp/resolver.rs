@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use rusqlite::{params, Connection};
 
-use crate::config::bexpConfig;
+use crate::config::BexpConfig;
 use crate::db::Database;
 use crate::error::Result;
 use crate::graph::GraphEngine;
@@ -27,7 +27,7 @@ struct UnresolvedRefInfo {
 /// Returns the number of edges created.
 pub fn resolve_via_lsp(
     db: &Arc<Database>,
-    config: &bexpConfig,
+    config: &BexpConfig,
     graph: &Arc<GraphEngine>,
     workspace_root: &Path,
 ) -> Result<usize> {
@@ -50,10 +50,7 @@ pub fn resolve_via_lsp(
     // Group by file
     let mut by_file: HashMap<String, Vec<&UnresolvedRefInfo>> = HashMap::new();
     for r in &refs {
-        by_file
-            .entry(r.file_path.clone())
-            .or_default()
-            .push(r);
+        by_file.entry(r.file_path.clone()).or_default().push(r);
     }
 
     let mut total_resolved = 0;
@@ -62,22 +59,19 @@ pub fn resolve_via_lsp(
     for (lang_name, server_config) in &config.lsp_servers {
         let workspace_str = workspace_root.to_string_lossy().to_string();
 
-        let mut client = match LspClient::spawn(
-            &server_config.command,
-            &server_config.args,
-            &workspace_str,
-        ) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to spawn LSP server '{}' ({}): {}",
-                    lang_name,
-                    server_config.command,
-                    e
-                );
-                continue;
-            }
-        };
+        let mut client =
+            match LspClient::spawn(&server_config.command, &server_config.args, &workspace_str) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to spawn LSP server '{}' ({}): {}",
+                        lang_name,
+                        server_config.command,
+                        e
+                    );
+                    continue;
+                }
+            };
 
         if let Err(e) = client.initialize() {
             tracing::warn!("LSP '{}' initialize failed: {}", lang_name, e);

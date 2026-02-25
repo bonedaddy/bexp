@@ -38,7 +38,10 @@ pub fn assemble_capsule(
             let location = if pivot.is_full_file {
                 format!("`{}`", pivot.path)
             } else {
-                format!("`{}` (lines {}-{})", pivot.path, pivot.line_start, pivot.line_end)
+                format!(
+                    "`{}` (lines {}-{})",
+                    pivot.path, pivot.line_start, pivot.line_end
+                )
             };
 
             let names = if pivot.node_names.is_empty() {

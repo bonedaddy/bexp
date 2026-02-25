@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::db::{queries, Database};
-use crate::error::{bexpError, Result};
+use crate::error::{BexpError, Result};
 use crate::types::{DetailLevel, Language};
 
 use self::token_counter::TokenCounter;
@@ -67,11 +67,11 @@ impl Skeletonizer {
 
         // Generate skeleton
         let source = std::fs::read_to_string(file_path)
-            .map_err(|e| bexpError::Skeleton(format!("Cannot read file: {e}")))?;
+            .map_err(|e| BexpError::Skeleton(format!("Cannot read file: {e}")))?;
 
         let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
         let lang = Language::from_extension(ext)
-            .ok_or_else(|| bexpError::Skeleton(format!("Unsupported language: {ext}")))?;
+            .ok_or_else(|| BexpError::Skeleton(format!("Unsupported language: {ext}")))?;
 
         let skeleton = SkeletonTransformer::transform(&source, lang, level)?;
 

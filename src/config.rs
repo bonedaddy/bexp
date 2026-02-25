@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::error::{bexpError, Result};
+use crate::error::{BexpError, Result};
 use crate::types::DetailLevel;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,7 +13,7 @@ pub struct LspServerConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct bexpConfig {
+pub struct BexpConfig {
     #[serde(default = "default_token_budget")]
     pub token_budget: usize,
 
@@ -76,7 +76,7 @@ fn default_observation_ttl_days() -> u64 {
     90
 }
 
-impl Default for bexpConfig {
+impl Default for BexpConfig {
     fn default() -> Self {
         Self {
             token_budget: default_token_budget(),
@@ -112,12 +112,12 @@ fn default_excludes() -> Vec<String> {
     ]
 }
 
-impl bexpConfig {
+impl BexpConfig {
     pub fn load(workspace_root: &Path) -> Result<Self> {
         let config_path = workspace_root.join(".bexp/config.toml");
         if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)
-                .map_err(|e| bexpError::Config(format!("Failed to read config: {e}")))?;
+                .map_err(|e| BexpError::Config(format!("Failed to read config: {e}")))?;
             let config: Self = toml::from_str(&content)?;
             Ok(config)
         } else {
@@ -179,7 +179,7 @@ mod tests {
     fn load_defaults_when_config_file_is_missing() {
         let workspace = TempDir::new("bexp-config-defaults").unwrap();
 
-        let config = bexpConfig::load(workspace.path()).unwrap();
+        let config = BexpConfig::load(workspace.path()).unwrap();
 
         assert_eq!(config.token_budget, 8000);
         assert_eq!(config.default_skeleton_level, DetailLevel::Standard);
@@ -209,7 +209,7 @@ observation_ttl_days = 30
         )
         .unwrap();
 
-        let config = bexpConfig::load(workspace.path()).unwrap();
+        let config = BexpConfig::load(workspace.path()).unwrap();
 
         assert_eq!(config.token_budget, 1234);
         assert_eq!(config.default_skeleton_level, DetailLevel::Minimal);
@@ -227,7 +227,7 @@ observation_ttl_days = 30
 
     #[test]
     fn is_excluded_checks_path_components() {
-        let config = bexpConfig::default();
+        let config = BexpConfig::default();
 
         assert!(config.is_excluded(Path::new("src/node_modules/pkg/index.ts")));
         assert!(config.is_excluded(Path::new(".bexp/index.db")));

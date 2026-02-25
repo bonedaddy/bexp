@@ -23,7 +23,16 @@ pub fn resolve_cross_file_refs(conn: &Connection) -> Result<usize> {
          JOIN nodes sn ON sn.id = ur.source_node_id",
     )?;
 
-    type UnresolvedRefRow = (i64, i64, String, Option<String>, String, Option<String>, Option<String>, i64);
+    type UnresolvedRefRow = (
+        i64,
+        i64,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<String>,
+        i64,
+    );
     let refs: Vec<UnresolvedRefRow> = stmt
         .query_map([], |row| {
             Ok((
@@ -59,7 +68,10 @@ pub fn resolve_cross_file_refs(conn: &Connection) -> Result<usize> {
     let all_imports = queries::get_all_import_edges(conn)?;
     let mut imports_by_file: HashMap<i64, Vec<&queries::ImportEdgeRecord>> = HashMap::new();
     for imp in &all_imports {
-        imports_by_file.entry(imp.source_file_id).or_default().push(imp);
+        imports_by_file
+            .entry(imp.source_file_id)
+            .or_default()
+            .push(imp);
     }
 
     // Batch-load all file paths for import-path matching
@@ -72,7 +84,17 @@ pub fn resolve_cross_file_refs(conn: &Connection) -> Result<usize> {
 
     let mut delete_stmt = conn.prepare("DELETE FROM unresolved_refs WHERE id = ?1")?;
 
-    for (ref_id, source_id, target_name, target_qname, edge_kind, context, import_path, source_file_id) in &refs {
+    for (
+        ref_id,
+        source_id,
+        target_name,
+        target_qname,
+        edge_kind,
+        context,
+        import_path,
+        source_file_id,
+    ) in &refs
+    {
         // Strategy 1: Qualified name match (confidence 0.95)
         if let Some(qname) = target_qname {
             if let Some(&tid) = qname_to_id.get(qname.as_str()) {
@@ -102,16 +124,25 @@ pub fn resolve_cross_file_refs(conn: &Connection) -> Result<usize> {
 
             // Boost if import evidence
             if let Some(imps) = file_imports {
-                if imps.iter().any(|imp| imp.target_file_id == candidate.file_id) {
+                if imps
+                    .iter()
+                    .any(|imp| imp.target_file_id == candidate.file_id)
+                {
                     confidence = 0.85;
                 } else if let Some(ip) = import_path {
-                    let candidate_path = file_paths.get(&candidate.file_id).map(|s| s.as_str()).unwrap_or("");
+                    let candidate_path = file_paths
+                        .get(&candidate.file_id)
+                        .map(|s| s.as_str())
+                        .unwrap_or("");
                     if path_matches_import(ip, candidate_path) {
                         confidence = 0.80;
                     }
                 }
             } else if let Some(ip) = import_path {
-                let candidate_path = file_paths.get(&candidate.file_id).map(|s| s.as_str()).unwrap_or("");
+                let candidate_path = file_paths
+                    .get(&candidate.file_id)
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
                 if path_matches_import(ip, candidate_path) {
                     confidence = 0.80;
                 }
@@ -120,7 +151,13 @@ pub fn resolve_cross_file_refs(conn: &Connection) -> Result<usize> {
             confidence = apply_type_preference(confidence, edge_kind, &candidate.kind);
 
             if confidence > MIN_ACCEPTANCE_CONFIDENCE {
-                insert_stmt.execute(params![source_id, candidate.id, edge_kind, confidence, context])?;
+                insert_stmt.execute(params![
+                    source_id,
+                    candidate.id,
+                    edge_kind,
+                    confidence,
+                    context
+                ])?;
                 delete_stmt.execute(params![ref_id])?;
                 count += 1;
             }
@@ -136,7 +173,9 @@ pub fn resolve_cross_file_refs(conn: &Connection) -> Result<usize> {
             &file_paths,
         ) {
             if confidence > MIN_ACCEPTANCE_CONFIDENCE {
-                insert_stmt.execute(params![source_id, target_id, edge_kind, confidence, context])?;
+                insert_stmt.execute(params![
+                    source_id, target_id, edge_kind, confidence, context
+                ])?;
                 delete_stmt.execute(params![ref_id])?;
                 count += 1;
             }
@@ -161,16 +200,25 @@ fn disambiguate(
 
         // Scope-aware: source file imports from the candidate's file
         if let Some(imps) = file_imports {
-            if imps.iter().any(|imp| imp.target_file_id == candidate.file_id) {
+            if imps
+                .iter()
+                .any(|imp| imp.target_file_id == candidate.file_id)
+            {
                 confidence = 0.85;
             } else if let Some(ip) = import_path {
-                let candidate_path = file_paths.get(&candidate.file_id).map(|s| s.as_str()).unwrap_or("");
+                let candidate_path = file_paths
+                    .get(&candidate.file_id)
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
                 if path_matches_import(ip, candidate_path) {
                     confidence = 0.80;
                 }
             }
         } else if let Some(ip) = import_path {
-            let candidate_path = file_paths.get(&candidate.file_id).map(|s| s.as_str()).unwrap_or("");
+            let candidate_path = file_paths
+                .get(&candidate.file_id)
+                .map(|s| s.as_str())
+                .unwrap_or("");
             if path_matches_import(ip, candidate_path) {
                 confidence = 0.80;
             }
@@ -197,8 +245,12 @@ fn disambiguate(
 fn apply_type_preference(base_confidence: f64, edge_kind: &str, node_kind: &str) -> f64 {
     let bonus = match (edge_kind, node_kind) {
         ("calls", "function") | ("calls", "method") => 0.05,
-        ("type_ref", "struct") | ("type_ref", "class") | ("type_ref", "trait")
-        | ("type_ref", "interface") | ("type_ref", "type_alias") | ("type_ref", "enum") => 0.05,
+        ("type_ref", "struct")
+        | ("type_ref", "class")
+        | ("type_ref", "trait")
+        | ("type_ref", "interface")
+        | ("type_ref", "type_alias")
+        | ("type_ref", "enum") => 0.05,
         ("implements", "trait") | ("implements", "interface") => 0.05,
         ("extends", "class") | ("extends", "struct") => 0.05,
         _ => 0.0,
@@ -236,8 +288,30 @@ mod tests {
         queries::insert_file(conn, path, lang, "hash", 0, 100).unwrap()
     }
 
-    fn insert_test_node(conn: &Connection, file_id: i64, kind: &str, name: &str, is_export: bool) -> i64 {
-        queries::insert_node(conn, file_id, kind, name, None, None, None, 1, 10, 0, 0, Some("pub"), is_export, None).unwrap()
+    fn insert_test_node(
+        conn: &Connection,
+        file_id: i64,
+        kind: &str,
+        name: &str,
+        is_export: bool,
+    ) -> i64 {
+        queries::insert_node(
+            conn,
+            file_id,
+            kind,
+            name,
+            None,
+            None,
+            None,
+            1,
+            10,
+            0,
+            0,
+            Some("pub"),
+            is_export,
+            None,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -269,7 +343,10 @@ mod tests {
 
         // Should have picked helper_c (from the imported file)
         let edges = queries::get_all_edges(&conn).unwrap();
-        let calls_edge = edges.iter().find(|e| e.kind == "calls" && e.source_node_id == caller).unwrap();
+        let calls_edge = edges
+            .iter()
+            .find(|e| e.kind == "calls" && e.source_node_id == caller)
+            .unwrap();
         assert_eq!(calls_edge.target_node_id, helper_c);
         assert!((calls_edge.confidence - 0.90).abs() < 0.01); // 0.85 + 0.05 type bonus
     }
@@ -294,7 +371,8 @@ mod tests {
         queries::insert_edge(&conn, import_node, b_mod, "imports", 1.0, None).unwrap();
 
         // type_ref edge should prefer struct
-        queries::insert_unresolved_ref(&conn, caller, "Config", None, "type_ref", None, None).unwrap();
+        queries::insert_unresolved_ref(&conn, caller, "Config", None, "type_ref", None, None)
+            .unwrap();
 
         let resolved = resolve_cross_file_refs(&conn).unwrap();
         assert_eq!(resolved, 1);
@@ -315,7 +393,8 @@ mod tests {
         let helper = insert_test_node(&conn, file_b, "function", "unique_helper", true);
         let caller = insert_test_node(&conn, file_a, "function", "run", false);
 
-        queries::insert_unresolved_ref(&conn, caller, "unique_helper", None, "calls", None, None).unwrap();
+        queries::insert_unresolved_ref(&conn, caller, "unique_helper", None, "calls", None, None)
+            .unwrap();
 
         let resolved = resolve_cross_file_refs(&conn).unwrap();
         assert_eq!(resolved, 1);
@@ -349,12 +428,18 @@ mod tests {
         assert_eq!(resolved, 1);
         let edges = queries::get_all_edges(&conn).unwrap();
         let calls_edge = edges.iter().find(|e| e.kind == "calls").unwrap();
-        assert!(calls_edge.confidence < 0.5, "Ambiguous match should have low confidence");
+        assert!(
+            calls_edge.confidence < 0.5,
+            "Ambiguous match should have low confidence"
+        );
     }
 
     #[test]
     fn path_matches_import_works() {
-        assert!(path_matches_import("./utils/helpers", "src/utils/helpers.ts"));
+        assert!(path_matches_import(
+            "./utils/helpers",
+            "src/utils/helpers.ts"
+        ));
         assert!(path_matches_import("utils/helpers", "src/utils/helpers.ts"));
         assert!(path_matches_import("helpers", "src/utils/helpers.ts"));
         assert!(!path_matches_import("other", "src/utils/helpers.ts"));

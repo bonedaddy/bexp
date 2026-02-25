@@ -262,7 +262,11 @@ mod tests {
 
     #[test]
     fn detail_level_roundtrips_through_string_representation() {
-        let all = [DetailLevel::Minimal, DetailLevel::Standard, DetailLevel::Detailed];
+        let all = [
+            DetailLevel::Minimal,
+            DetailLevel::Standard,
+            DetailLevel::Detailed,
+        ];
 
         for level in all {
             assert_eq!(DetailLevel::parse(level.as_str()), Some(level));

@@ -114,7 +114,15 @@ pub fn find_all_paths(
     let mut visited = HashSet::new();
     visited.insert(from);
 
-    dfs_paths(graph, from, to, max_depth, &mut current_path, &mut visited, &mut paths);
+    dfs_paths(
+        graph,
+        from,
+        to,
+        max_depth,
+        &mut current_path,
+        &mut visited,
+        &mut paths,
+    );
 
     paths
 }

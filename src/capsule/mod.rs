@@ -6,7 +6,7 @@ pub mod search;
 
 use std::sync::Arc;
 
-use crate::config::bexpConfig;
+use crate::config::BexpConfig;
 use crate::db::{queries, Database};
 use crate::error::Result;
 use crate::graph::GraphEngine;
@@ -17,7 +17,7 @@ use cache::CapsuleCache;
 
 pub struct CapsuleGenerator {
     db: Arc<Database>,
-    config: Arc<bexpConfig>,
+    config: Arc<BexpConfig>,
     graph: Arc<GraphEngine>,
     skeletonizer: Arc<Skeletonizer>,
     memory: Arc<MemoryService>,
@@ -27,7 +27,7 @@ pub struct CapsuleGenerator {
 impl CapsuleGenerator {
     pub fn new(
         db: Arc<Database>,
-        config: Arc<bexpConfig>,
+        config: Arc<BexpConfig>,
         graph: Arc<GraphEngine>,
         skeletonizer: Arc<Skeletonizer>,
         memory: Arc<MemoryService>,
@@ -66,7 +66,10 @@ impl CapsuleGenerator {
         // Check cache (only for non-session queries since memory context varies)
         let generation = queries::get_index_generation(&self.db.reader()).unwrap_or(0);
         if session_id.is_none() {
-            if let Some(cached) = self.cache.get(query, token_budget, intent.as_str(), generation) {
+            if let Some(cached) = self
+                .cache
+                .get(query, token_budget, intent.as_str(), generation)
+            {
                 tracing::debug!("Cache hit for query: {}", query);
                 return Ok(cached);
             }
@@ -74,13 +77,7 @@ impl CapsuleGenerator {
 
         // 2. Hybrid search for relevant nodes
         let reader = self.db.reader();
-        let search_results = search::hybrid_search(
-            &reader,
-            &self.graph,
-            query,
-            &intent,
-            50,
-        )?;
+        let search_results = search::hybrid_search(&reader, &self.graph, query, &intent, 50)?;
 
         if search_results.is_empty() {
             return Ok("No relevant code found for the given query.".to_string());
@@ -101,12 +98,7 @@ impl CapsuleGenerator {
         )?;
 
         // 5. Assemble capsule
-        let mut output = generator::assemble_capsule(
-            &reader,
-            &allocation,
-            query,
-            &intent,
-        )?;
+        let mut output = generator::assemble_capsule(&reader, &allocation, query, &intent)?;
 
         // 6. Add memory context if session provided
         if let Some(sid) = session_id {
@@ -119,7 +111,13 @@ impl CapsuleGenerator {
 
         // Cache result (only non-session queries)
         if session_id.is_none() {
-            self.cache.put(query, token_budget, intent.as_str(), generation, output.clone());
+            self.cache.put(
+                query,
+                token_budget,
+                intent.as_str(),
+                generation,
+                output.clone(),
+            );
         }
 
         Ok(output)

@@ -1,10 +1,10 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::db::queries;
-use crate::mcp::server::{UnresolvedRefsParams, bexpServer};
+use crate::mcp::server::{BexpServer, UnresolvedRefsParams};
 
 pub async fn handle(
-    server: &bexpServer,
+    server: &BexpServer,
     params: UnresolvedRefsParams,
 ) -> Result<CallToolResult, ErrorData> {
     if let Some(result) = super::wait_for_index(&server.indexer).await {
@@ -14,12 +14,9 @@ pub async fn handle(
     let limit = params.limit.unwrap_or(50);
 
     let reader = server.db.reader();
-    let results = queries::get_unresolved_refs_filtered(
-        &reader,
-        params.file_path.as_deref(),
-        limit,
-    )
-    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+    let results =
+        queries::get_unresolved_refs_filtered(&reader, params.file_path.as_deref(), limit)
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
     if results.is_empty() {
         return Ok(CallToolResult::success(vec![Content::text(

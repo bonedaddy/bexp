@@ -1,13 +1,13 @@
 use rusqlite::{params, Connection};
 
-use crate::config::bexpConfig;
+use crate::config::BexpConfig;
 use crate::error::Result;
 
 use super::open_external_db;
 
 /// Resolve remaining unresolved refs against external workspace databases.
 /// Returns the number of cross-workspace edges created.
-pub fn resolve_cross_workspace(conn: &Connection, config: &bexpConfig) -> Result<usize> {
+pub fn resolve_cross_workspace(conn: &Connection, config: &BexpConfig) -> Result<usize> {
     if config.workspace_group.is_empty() {
         return Ok(0);
     }
@@ -96,7 +96,10 @@ pub fn resolve_cross_workspace(conn: &Connection, config: &bexpConfig) -> Result
         total += resolved_for_ws;
     }
 
-    tracing::info!("Cross-workspace resolution complete: {} edges created", total);
+    tracing::info!(
+        "Cross-workspace resolution complete: {} edges created",
+        total
+    );
     Ok(total)
 }
 

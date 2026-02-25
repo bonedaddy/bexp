@@ -6,7 +6,7 @@ use std::time::Duration;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use tokio::sync::mpsc;
 
-use crate::config::bexpConfig;
+use crate::config::BexpConfig;
 use crate::db::Database;
 use crate::graph::GraphEngine;
 use crate::indexer::IndexerService;
@@ -19,7 +19,7 @@ pub struct FileWatcher {
 impl FileWatcher {
     pub fn start(
         workspace_root: PathBuf,
-        config: Arc<bexpConfig>,
+        config: Arc<BexpConfig>,
         indexer: Arc<IndexerService>,
         graph: Arc<GraphEngine>,
         db: Arc<Database>,
@@ -29,10 +29,7 @@ impl FileWatcher {
         let debounce_ms = config.watcher_debounce_ms;
         let (std_tx, std_rx) = std::sync::mpsc::channel();
 
-        let mut debouncer = new_debouncer(
-            Duration::from_millis(debounce_ms),
-            std_tx,
-        )?;
+        let mut debouncer = new_debouncer(Duration::from_millis(debounce_ms), std_tx)?;
 
         debouncer
             .watcher()
@@ -89,7 +86,9 @@ impl FileWatcher {
                         // Incremental graph update instead of full rebuild
                         if !report.changed_file_ids.is_empty() {
                             let reader = db.reader();
-                            if let Err(e) = graph.incremental_update(&reader, &report.changed_file_ids) {
+                            if let Err(e) =
+                                graph.incremental_update(&reader, &report.changed_file_ids)
+                            {
                                 tracing::error!("Incremental graph update failed: {}", e);
                             }
                         }

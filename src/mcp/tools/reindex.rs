@@ -1,29 +1,26 @@
-use std::path::PathBuf;
-
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
-use crate::mcp::server::{ReindexParams, bexpServer};
+use crate::mcp::server::{BexpServer, ReindexParams};
 
 pub async fn handle(
-    server: &bexpServer,
+    server: &BexpServer,
     params: ReindexParams,
 ) -> Result<CallToolResult, ErrorData> {
-    let report = if params.full.unwrap_or(false) || params.files.is_none() {
-        server
+    let report = match params.files {
+        Some(ref file_names) if !params.full.unwrap_or(false) => {
+            let mut paths = Vec::with_capacity(file_names.len());
+            for f in file_names {
+                paths.push(super::validate_workspace_path(&server.workspace_root, f)?);
+            }
+            server
+                .indexer
+                .incremental_reindex(&paths)
+                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
+        }
+        _ => server
             .indexer
             .full_index()
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
-    } else {
-        let paths: Vec<PathBuf> = params
-            .files
-            .unwrap()
-            .iter()
-            .map(|f| server.workspace_root.join(f))
-            .collect();
-        server
-            .indexer
-            .incremental_reindex(&paths)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?,
     };
 
     // Rebuild graph after indexing

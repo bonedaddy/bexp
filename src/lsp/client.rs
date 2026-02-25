@@ -56,11 +56,7 @@ struct JsonRpcMessage {
 }
 
 impl LspClient {
-    pub fn spawn(
-        command: &str,
-        args: &[String],
-        workspace_root: &str,
-    ) -> std::io::Result<Self> {
+    pub fn spawn(command: &str, args: &[String], workspace_root: &str) -> std::io::Result<Self> {
         let mut process = Command::new(command)
             .args(args)
             .stdin(Stdio::piped())
@@ -69,7 +65,9 @@ impl LspClient {
             .spawn()?;
 
         // Take stdout and spawn a reader thread that pushes messages into a channel
-        let stdout = process.stdout.take()
+        let stdout = process
+            .stdout
+            .take()
             .ok_or_else(|| std::io::Error::other("No stdout available"))?;
 
         let (tx, rx): (Sender<JsonRpcMessage>, Receiver<JsonRpcMessage>) =
@@ -206,9 +204,7 @@ impl LspClient {
 
         let params = GotoDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier {
-                    uri: file_uri,
-                },
+                text_document: TextDocumentIdentifier { uri: file_uri },
                 position: Position {
                     line,
                     character: col,
@@ -218,10 +214,8 @@ impl LspClient {
             partial_result_params: Default::default(),
         };
 
-        let response = self.send_request(
-            "textDocument/definition",
-            serde_json::to_value(params)?,
-        )?;
+        let response =
+            self.send_request("textDocument/definition", serde_json::to_value(params)?)?;
 
         match response {
             Some(value) => {
@@ -252,11 +246,7 @@ impl LspClient {
         Ok(())
     }
 
-    fn send_request(
-        &mut self,
-        method: &str,
-        params: Value,
-    ) -> anyhow::Result<Option<Value>> {
+    fn send_request(&mut self, method: &str, params: Value) -> anyhow::Result<Option<Value>> {
         // Check process health before sending
         {
             let last = *self.last_response_at.lock().unwrap();
@@ -282,7 +272,10 @@ impl LspClient {
         let body = serde_json::to_string(&request)?;
         let message = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
 
-        let stdin = self.process.stdin.as_mut()
+        let stdin = self
+            .process
+            .stdin
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("No stdin available"))?;
         stdin.write_all(message.as_bytes())?;
         stdin.flush()?;
@@ -300,7 +293,10 @@ impl LspClient {
 
         let message = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
 
-        let stdin = self.process.stdin.as_mut()
+        let stdin = self
+            .process
+            .stdin
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("No stdin available"))?;
         stdin.write_all(message.as_bytes())?;
         stdin.flush()?;

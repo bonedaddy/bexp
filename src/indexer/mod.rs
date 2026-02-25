@@ -11,10 +11,10 @@ use std::sync::Arc;
 
 use rayon::prelude::*;
 
-use crate::config::bexpConfig;
+use crate::config::BexpConfig;
 use crate::db::queries;
 use crate::db::Database;
-use crate::error::{Result, bexpError};
+use crate::error::{BexpError, Result};
 use crate::types::Language;
 
 use self::extractor::ExtractedFile;
@@ -23,7 +23,7 @@ use self::scanner::Scanner;
 
 pub struct IndexerService {
     db: Arc<Database>,
-    config: Arc<bexpConfig>,
+    config: Arc<BexpConfig>,
     workspace_root: PathBuf,
     parser_pool: ParserPool,
     watcher_active: AtomicBool,
@@ -31,7 +31,7 @@ pub struct IndexerService {
 }
 
 impl IndexerService {
-    pub fn new(db: Arc<Database>, config: Arc<bexpConfig>, workspace_root: PathBuf) -> Self {
+    pub fn new(db: Arc<Database>, config: Arc<BexpConfig>, workspace_root: PathBuf) -> Self {
         Self {
             db,
             config,
@@ -238,7 +238,7 @@ impl IndexerService {
 
         {
             let mut conn = self.db.writer();
-            let tx = conn.transaction().map_err(bexpError::Database)?;
+            let tx = conn.transaction().map_err(BexpError::Database)?;
 
             for (path, extracted) in &extracted {
                 let rel_path = path
@@ -262,7 +262,7 @@ impl IndexerService {
                 edge_count += ec;
             }
 
-            tx.commit().map_err(bexpError::Database)?;
+            tx.commit().map_err(BexpError::Database)?;
         }
 
         // Resolve cross-file references
@@ -351,7 +351,10 @@ impl IndexerService {
             // Re-parse
             match self.parse_file(path, lang) {
                 Ok(extracted) => {
-                    parsed_files.push(ParsedFile { rel_path, extracted });
+                    parsed_files.push(ParsedFile {
+                        rel_path,
+                        extracted,
+                    });
                 }
                 Err(e) => {
                     tracing::warn!("Failed to re-parse {}: {}", path.display(), e);
@@ -363,7 +366,7 @@ impl IndexerService {
         // Uses rusqlite Transaction for automatic rollback on error.
         if !deletions.is_empty() || !parsed_files.is_empty() {
             let mut conn = self.db.writer();
-            let tx = conn.transaction().map_err(bexpError::Database)?;
+            let tx = conn.transaction().map_err(BexpError::Database)?;
 
             for del in &deletions {
                 if let Ok(Some(file)) = queries::get_file_by_path(&tx, &del.rel_path) {
@@ -393,7 +396,7 @@ impl IndexerService {
                 edge_count += ec;
             }
 
-            tx.commit().map_err(bexpError::Database)?;
+            tx.commit().map_err(BexpError::Database)?;
         }
 
         let resolved = self.resolve_references()?;
@@ -416,7 +419,7 @@ impl IndexerService {
         let content = std::fs::read_to_string(path)?;
 
         if content.len() > self.config.max_file_size {
-            return Err(bexpError::Index(format!(
+            return Err(BexpError::Index(format!(
                 "File too large: {} bytes",
                 content.len()
             )));
@@ -438,7 +441,14 @@ impl IndexerService {
             .to_string_lossy()
             .to_string();
 
-        self.parser_pool.parse(&content, lang, &rel_path, content_hash, mtime_ns, metadata.len())
+        self.parser_pool.parse(
+            &content,
+            lang,
+            &rel_path,
+            content_hash,
+            mtime_ns,
+            metadata.len(),
+        )
     }
 
     fn resolve_references(&self) -> Result<usize> {
@@ -482,10 +492,8 @@ mod tests {
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("clock went backwards")
                 .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "{prefix}-{}-{unique}",
-                std::process::id()
-            ));
+            let path =
+                std::env::temp_dir().join(format!("{prefix}-{}-{unique}", std::process::id()));
             std::fs::create_dir_all(&path)?;
             Ok(Self { path })
         }
@@ -508,9 +516,11 @@ mod tests {
     #[test]
     fn mtime_hash_skips_reindex_when_unchanged() {
         let workspace = TempWorkspace::new("bexp-mtime-skip").unwrap();
-        workspace.write_file("lib.rs", "pub fn hello() {}\n").unwrap();
+        workspace
+            .write_file("lib.rs", "pub fn hello() {}\n")
+            .unwrap();
 
-        let config = Arc::new(bexpConfig::default());
+        let config = Arc::new(BexpConfig::default());
         let db_path = config.db_path(&workspace.path);
         let db = Arc::new(crate::db::Database::open(&db_path).unwrap());
         let indexer = IndexerService::new(db.clone(), config, workspace.path.clone());
@@ -529,9 +539,11 @@ mod tests {
     #[test]
     fn mtime_hash_reindexes_when_file_touched() {
         let workspace = TempWorkspace::new("bexp-mtime-touch").unwrap();
-        workspace.write_file("lib.rs", "pub fn hello() {}\n").unwrap();
+        workspace
+            .write_file("lib.rs", "pub fn hello() {}\n")
+            .unwrap();
 
-        let config = Arc::new(bexpConfig::default());
+        let config = Arc::new(BexpConfig::default());
         let db_path = config.db_path(&workspace.path);
         let db = Arc::new(crate::db::Database::open(&db_path).unwrap());
         let indexer = IndexerService::new(db.clone(), config, workspace.path.clone());
@@ -541,7 +553,9 @@ mod tests {
 
         // Touch the file (change mtime)
         std::thread::sleep(std::time::Duration::from_millis(50));
-        workspace.write_file("lib.rs", "pub fn hello_changed() {}\n").unwrap();
+        workspace
+            .write_file("lib.rs", "pub fn hello_changed() {}\n")
+            .unwrap();
 
         // Should re-index because mtime changed
         let report2 = indexer.full_index().unwrap();

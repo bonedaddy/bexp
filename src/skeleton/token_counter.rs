@@ -15,7 +15,10 @@ impl TokenCounter {
         let bpe = match cl100k_base() {
             Ok(b) => Some(b),
             Err(e) => {
-                tracing::warn!("Failed to load cl100k_base tokenizer: {}. Token counts will be estimated.", e);
+                tracing::warn!(
+                    "Failed to load cl100k_base tokenizer: {}. Token counts will be estimated.",
+                    e
+                );
                 None
             }
         };

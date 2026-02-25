@@ -1,9 +1,9 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
-use crate::mcp::server::{MemorySearchParams, bexpServer};
+use crate::mcp::server::{BexpServer, MemorySearchParams};
 
 pub async fn handle(
-    server: &bexpServer,
+    server: &BexpServer,
     params: MemorySearchParams,
 ) -> Result<CallToolResult, ErrorData> {
     if let Some(result) = super::wait_for_index(&server.indexer).await {

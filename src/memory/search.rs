@@ -54,7 +54,17 @@ pub fn search_observations(
          LIMIT ?2",
     )?;
 
-    type ObservationRow = (i64, String, Option<String>, Option<String>, String, bool, f64, f64, String);
+    type ObservationRow = (
+        i64,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+        bool,
+        f64,
+        f64,
+        String,
+    );
     let raw_results: Vec<ObservationRow> = stmt
         .query_map(params![fts_query, (limit * 3) as i64], |row| {
             Ok((
@@ -83,7 +93,18 @@ pub fn search_observations(
 
     let mut results: Vec<MemorySearchResult> = Vec::new();
 
-    for (id, content, headline, summary, created_at, is_stale, bm25_raw, age_days, obs_session_id) in &raw_results {
+    for (
+        id,
+        content,
+        headline,
+        summary,
+        created_at,
+        is_stale,
+        bm25_raw,
+        age_days,
+        obs_session_id,
+    ) in &raw_results
+    {
         // Normalized BM25
         let bm25_norm = if max_bm25 > 0.0 {
             bm25_raw.abs() / max_bm25
@@ -122,7 +143,11 @@ pub fn search_observations(
         });
     }
 
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(limit);
 
     Ok(results)

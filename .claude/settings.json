@@ -1,6 +1,6 @@
 {
   "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "0"
   },
   "permissions": {
     "allow": [
@@ -58,9 +58,6 @@
     "defaultMode": "bypassPermissions"
   },
   "enabledPlugins": {
-    "playground@claude-plugins-official": true
-  },
-  "env": {
-    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "0"
+    "playground@claude-plugins-official": false
   }
 }

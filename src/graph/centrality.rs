@@ -22,10 +22,8 @@ pub fn compute_pagerank(
     let n_f64 = n as f64;
     let initial = 1.0 / n_f64;
 
-    let mut scores: HashMap<NodeIndex, f64> = graph
-        .node_indices()
-        .map(|idx| (idx, initial))
-        .collect();
+    let mut scores: HashMap<NodeIndex, f64> =
+        graph.node_indices().map(|idx| (idx, initial)).collect();
 
     // Pre-compute out-degrees for all nodes (avoids recomputing per-neighbor per-iteration)
     let out_degrees: HashMap<NodeIndex, f64> = graph

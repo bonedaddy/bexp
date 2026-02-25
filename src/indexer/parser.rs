@@ -1,4 +1,4 @@
-use crate::error::{Result, bexpError};
+use crate::error::{BexpError, Result};
 use crate::indexer::extractor::ExtractedFile;
 use crate::indexer::languages;
 use crate::types::Language;
@@ -37,14 +37,14 @@ impl ParserPool {
             Language::Cpp => tree_sitter_cpp::LANGUAGE.into(),
         };
 
-        parser.set_language(&ts_language).map_err(|e| {
-            bexpError::Parse {
+        parser
+            .set_language(&ts_language)
+            .map_err(|e| BexpError::Parse {
                 file: file_path.to_string(),
                 reason: format!("Language setup failed: {e}"),
-            }
-        })?;
+            })?;
 
-        let tree = parser.parse(source, None).ok_or_else(|| bexpError::Parse {
+        let tree = parser.parse(source, None).ok_or_else(|| BexpError::Parse {
             file: file_path.to_string(),
             reason: "Parse returned None".to_string(),
         })?;
