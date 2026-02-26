@@ -25,21 +25,52 @@ pub struct IndexerService {
     db: Arc<Database>,
     config: Arc<BexpConfig>,
     workspace_root: PathBuf,
+    extra_roots: Vec<PathBuf>,
     parser_pool: ParserPool,
     watcher_active: AtomicBool,
     index_ready: AtomicBool,
 }
 
 impl IndexerService {
-    pub fn new(db: Arc<Database>, config: Arc<BexpConfig>, workspace_root: PathBuf) -> Self {
+    pub fn new(
+        db: Arc<Database>,
+        config: Arc<BexpConfig>,
+        workspace_root: PathBuf,
+        extra_roots: Vec<PathBuf>,
+    ) -> Self {
         Self {
             db,
             config,
             workspace_root,
+            extra_roots,
             parser_pool: ParserPool::new(),
             watcher_active: AtomicBool::new(false),
             index_ready: AtomicBool::new(false),
         }
+    }
+
+    /// Compute a relative path for display/storage.
+    /// - Files under workspace_root get standard relative paths.
+    /// - Files under an extra_root get prefixed with the root's directory name.
+    /// - Fallback: absolute path.
+    fn relative_path(&self, path: &Path) -> String {
+        if let Ok(rel) = path.strip_prefix(&self.workspace_root) {
+            return rel.to_string_lossy().to_string();
+        }
+        for extra_root in &self.extra_roots {
+            if let Ok(rel) = path.strip_prefix(extra_root) {
+                let prefix = extra_root
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "external".to_string());
+                return format!("{}/{}", prefix, rel.to_string_lossy());
+            }
+        }
+        path.to_string_lossy().to_string()
+    }
+
+    pub fn extra_roots(&self) -> &[PathBuf] {
+        &self.extra_roots
     }
 
     pub fn watcher_active(&self) -> bool {
@@ -64,14 +95,17 @@ impl IndexerService {
     fn compute_filesystem_mtime_hash(&self) -> Result<String> {
         let scanner = Scanner::new(&self.config);
         let mut files = scanner.scan(&self.workspace_root)?;
+        for extra_root in &self.extra_roots {
+            match scanner.scan(extra_root) {
+                Ok(extra) => files.extend(extra),
+                Err(e) => tracing::warn!(root = %extra_root.display(), error = %e, "Failed to scan extra root for mtime hash"),
+            }
+        }
         files.sort();
 
         let mut hasher_data = Vec::new();
         for path in &files {
-            let rel_path = path
-                .strip_prefix(&self.workspace_root)
-                .unwrap_or(path)
-                .to_string_lossy();
+            let rel_path = self.relative_path(path);
 
             let mtime_ns = std::fs::metadata(path)
                 .ok()
@@ -181,7 +215,13 @@ impl IndexerService {
         }
 
         let scanner = Scanner::new(&self.config);
-        let files = scanner.scan(&self.workspace_root)?;
+        let mut files = scanner.scan(&self.workspace_root)?;
+        for extra_root in &self.extra_roots {
+            match scanner.scan(extra_root) {
+                Ok(extra_files) => files.extend(extra_files),
+                Err(e) => tracing::warn!(root = %extra_root.display(), error = %e, "Failed to scan extra root"),
+            }
+        }
 
         tracing::info!(file_count = files.len(), "Scanning found files to index");
 
@@ -199,17 +239,14 @@ impl IndexerService {
                 let lang = Language::from_extension(ext)?;
 
                 // Per-file mtime check: skip unchanged files
-                let rel_path = path
-                    .strip_prefix(&self.workspace_root)
-                    .unwrap_or(path)
-                    .to_string_lossy();
+                let rel_path = self.relative_path(path);
                 let current_mtime = std::fs::metadata(path)
                     .ok()
                     .and_then(|m| m.modified().ok())
                     .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                     .map(|d| d.as_nanos() as i64)
                     .unwrap_or(0);
-                if let Some(&stored_mtime) = stored_mtimes.get(rel_path.as_ref()) {
+                if let Some(&stored_mtime) = stored_mtimes.get(rel_path.as_str()) {
                     if stored_mtime == current_mtime {
                         return None; // unchanged, skip
                     }
@@ -242,10 +279,7 @@ impl IndexerService {
             let tx = conn.transaction().map_err(BexpError::Database)?;
 
             for (path, extracted) in &extracted {
-                let rel_path = path
-                    .strip_prefix(&self.workspace_root)
-                    .unwrap_or(path)
-                    .to_string_lossy();
+                let rel_path = self.relative_path(path);
 
                 let file_id = queries::insert_file(
                     &tx,
@@ -311,11 +345,7 @@ impl IndexerService {
         let mut parsed_files = Vec::new();
 
         for path in changed_paths {
-            let rel_path = path
-                .strip_prefix(&self.workspace_root)
-                .unwrap_or(path)
-                .to_string_lossy()
-                .to_string();
+            let rel_path = self.relative_path(path);
 
             // Check if file still exists
             if !path.exists() {
@@ -440,11 +470,7 @@ impl IndexerService {
 
         let content_hash = format!("{:016x}", xxhash_rust::xxh3::xxh3_64(content.as_bytes()));
 
-        let rel_path = path
-            .strip_prefix(&self.workspace_root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .to_string();
+        let rel_path = self.relative_path(path);
 
         self.parser_pool.parse(
             &content,
@@ -528,7 +554,7 @@ mod tests {
         let config = Arc::new(BexpConfig::default());
         let db_path = config.db_path(&workspace.path);
         let db = Arc::new(crate::db::Database::open(&db_path).unwrap());
-        let indexer = IndexerService::new(db.clone(), config, workspace.path.clone());
+        let indexer = IndexerService::new(db.clone(), config, workspace.path.clone(), vec![]);
 
         // First index should run fully
         let report1 = indexer.full_index().unwrap();
@@ -551,7 +577,7 @@ mod tests {
         let config = Arc::new(BexpConfig::default());
         let db_path = config.db_path(&workspace.path);
         let db = Arc::new(crate::db::Database::open(&db_path).unwrap());
-        let indexer = IndexerService::new(db.clone(), config, workspace.path.clone());
+        let indexer = IndexerService::new(db.clone(), config, workspace.path.clone(), vec![]);
 
         let report1 = indexer.full_index().unwrap();
         assert_eq!(report1.file_count, 1);

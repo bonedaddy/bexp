@@ -50,7 +50,7 @@ fn full_index_populates_db_and_resolves_cross_file_call_edges() -> Result<()> {
 
     let config = Arc::new(BexpConfig::default());
     let db = Arc::new(Database::open(&config.db_path(workspace.path()))?);
-    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf());
+    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf(), vec![]);
 
     let report = indexer.full_index()?;
     assert_eq!(report.file_count, 2);

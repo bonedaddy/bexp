@@ -80,7 +80,7 @@ fn setup_search_workspace() -> SearchBenchState {
     fs::create_dir_all(db_path.parent().unwrap()).unwrap();
     let db = Arc::new(Database::open(&db_path).unwrap());
 
-    let indexer = IndexerService::new(db.clone(), config.clone(), workspace);
+    let indexer = IndexerService::new(db.clone(), config.clone(), workspace, vec![]);
     indexer.full_index().unwrap();
 
     let graph = Arc::new(GraphEngine::new());

@@ -115,16 +115,8 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn index_workspace(workspace_root: &std::path::Path) -> anyhow::Result<()> {
-    // Auto-discover and index git submodules that haven't been initialized yet
+    // Auto-discover git submodules and add them to workspace_group
     let submodules = git::discover_submodules(workspace_root);
-    for sub_path in &submodules {
-        if !sub_path.join(".bexp/index.db").exists() {
-            tracing::info!(submodule = %sub_path.display(), "Auto-indexing submodule");
-            if let Err(e) = index_workspace(sub_path) {
-                tracing::warn!(submodule = %sub_path.display(), error = %e, "Failed to index submodule");
-            }
-        }
-    }
 
     let mut config = BexpConfig::load(workspace_root)?;
     for sub_path in &submodules {
@@ -133,9 +125,16 @@ fn index_workspace(workspace_root: &std::path::Path) -> anyhow::Result<()> {
             config.workspace_group.push(sub_str);
         }
     }
+
+    let extra_roots = compute_extra_roots(&config, workspace_root);
     let config = Arc::new(config);
     let db = Arc::new(Database::open(&config.db_path(workspace_root))?);
-    let indexer = IndexerService::new(db.clone(), config.clone(), workspace_root.to_path_buf());
+    let indexer = IndexerService::new(
+        db.clone(),
+        config.clone(),
+        workspace_root.to_path_buf(),
+        extra_roots,
+    );
 
     let report = indexer.full_index()?;
     eprintln!(
@@ -146,6 +145,32 @@ fn index_workspace(workspace_root: &std::path::Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Compute extra roots from workspace_group, filtering out paths already under workspace_root.
+fn compute_extra_roots(config: &BexpConfig, workspace_root: &std::path::Path) -> Vec<PathBuf> {
+    let canonical_root = workspace_root.canonicalize().unwrap_or_else(|_| workspace_root.to_path_buf());
+    config
+        .workspace_group
+        .iter()
+        .filter_map(|s| {
+            let p = PathBuf::from(s);
+            let p = if p.is_relative() {
+                workspace_root.join(&p)
+            } else {
+                p
+            };
+            let p = p.canonicalize().ok()?;
+            if p.starts_with(&canonical_root) {
+                None // Already scanned by main WalkDir
+            } else if p.is_dir() {
+                Some(p)
+            } else {
+                tracing::warn!(path = %p.display(), "Workspace group path not found or not a directory, skipping");
+                None
+            }
+        })
+        .collect()
+}
+
 async fn serve(workspace_root: PathBuf, health_port_override: Option<u16>) -> anyhow::Result<()> {
     tracing::info!(workspace = %workspace_root.display(), "Starting bexp server");
 
@@ -154,23 +179,15 @@ async fn serve(workspace_root: PathBuf, health_port_override: Option<u16>) -> an
     if health_port_override.is_some() {
         config.health_port = health_port_override;
     }
-    // Auto-discover git submodules, index any that haven't been initialized yet,
-    // and add them all to workspace_group for cross-workspace resolution.
+    // Auto-discover git submodules and add them to workspace_group for unified indexing.
     let submodules = git::discover_submodules(&workspace_root);
-    for sub_path in &submodules {
-        if !sub_path.join(".bexp/index.db").exists() {
-            tracing::info!(submodule = %sub_path.display(), "Auto-indexing submodule");
-            if let Err(e) = index_workspace(sub_path) {
-                tracing::warn!(submodule = %sub_path.display(), error = %e, "Failed to index submodule");
-            }
-        }
-    }
     for sub_path in &submodules {
         let sub_str = sub_path.to_string_lossy().to_string();
         if !config.workspace_group.contains(&sub_str) {
             config.workspace_group.push(sub_str);
         }
     }
+    let extra_roots = compute_extra_roots(&config, &workspace_root);
     let config = Arc::new(config);
 
     // Install Prometheus metrics recorder
@@ -189,6 +206,7 @@ async fn serve(workspace_root: PathBuf, health_port_override: Option<u16>) -> an
         db.clone(),
         config.clone(),
         workspace_root.clone(),
+        extra_roots,
     ));
 
     let skeletonizer = Arc::new(Skeletonizer::new(db.clone()));

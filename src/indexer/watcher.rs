@@ -35,9 +35,21 @@ impl FileWatcher {
             .watcher()
             .watch(&workspace_root, notify::RecursiveMode::Recursive)?;
 
+        // Also watch extra roots (external workspace_group members)
+        let extra_roots: Vec<PathBuf> = indexer.extra_roots().to_vec();
+        for extra_root in &extra_roots {
+            if let Err(e) = debouncer
+                .watcher()
+                .watch(extra_root, notify::RecursiveMode::Recursive)
+            {
+                tracing::warn!(root = %extra_root.display(), error = %e, "Failed to watch extra root");
+            }
+        }
+
         // Bridge from std channel to tokio channel
         let config_clone = config.clone();
         let root_clone = workspace_root.clone();
+        let extra_roots_clone = extra_roots.clone();
         std::thread::spawn(move || {
             while let Ok(events) = std_rx.recv() {
                 match events {
@@ -47,7 +59,14 @@ impl FileWatcher {
                             .filter(|e| e.kind == DebouncedEventKind::Any)
                             .map(|e| e.path)
                             .filter(|p| {
-                                let rel = p.strip_prefix(&root_clone).unwrap_or(p);
+                                // Try stripping workspace root or any extra root
+                                let rel = p.strip_prefix(&root_clone)
+                                    .or_else(|_| {
+                                        extra_roots_clone.iter()
+                                            .find_map(|r| p.strip_prefix(r).ok())
+                                            .ok_or(())
+                                    })
+                                    .unwrap_or(p);
                                 !config_clone.is_excluded(rel)
                             })
                             .filter(|p| {

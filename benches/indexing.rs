@@ -72,7 +72,7 @@ fn bench_full_index_10_files(c: &mut Criterion) {
         b.iter_with_setup(
             || setup_indexed_workspace(10),
             |(workspace, db, config)| {
-                let indexer = IndexerService::new(db, config, workspace);
+                let indexer = IndexerService::new(db, config, workspace, vec![]);
                 indexer.full_index().unwrap();
             },
         );
@@ -84,7 +84,7 @@ fn bench_full_index_50_files(c: &mut Criterion) {
         b.iter_with_setup(
             || setup_indexed_workspace(50),
             |(workspace, db, config)| {
-                let indexer = IndexerService::new(db, config, workspace);
+                let indexer = IndexerService::new(db, config, workspace, vec![]);
                 indexer.full_index().unwrap();
             },
         );
@@ -96,7 +96,7 @@ fn bench_incremental_reindex(c: &mut Criterion) {
         b.iter_with_setup(
             || {
                 let (workspace, db, config) = setup_indexed_workspace(20);
-                let indexer = IndexerService::new(db, config, workspace.clone());
+                let indexer = IndexerService::new(db, config, workspace.clone(), vec![]);
                 indexer.full_index().unwrap();
 
                 // Modify one file
