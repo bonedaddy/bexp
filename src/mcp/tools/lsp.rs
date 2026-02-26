@@ -16,8 +16,8 @@ pub async fn handle(
     let mut skipped = 0;
 
     {
-        let conn = server.db.writer();
-        let reader = server.db.reader();
+        let conn = server.db.writer().map_err(super::to_error_data)?;
+        let reader = server.db.reader().map_err(super::to_error_data)?;
 
         for edge in &params.edges {
             let edge_kind = EdgeKind::parse(&edge.kind).unwrap_or(EdgeKind::Calls);
@@ -42,7 +42,7 @@ pub async fn handle(
 
     // Rebuild graph with new edges
     if added > 0 {
-        let reader = server.db.reader();
+        let reader = server.db.reader().map_err(super::to_error_data)?;
         server
             .graph
             .rebuild_from_db(&reader)

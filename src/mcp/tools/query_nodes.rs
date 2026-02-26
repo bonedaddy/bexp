@@ -16,7 +16,7 @@ pub async fn handle(
     let exported_only = params.exported_only.unwrap_or(false);
     let include_pagerank = params.include_pagerank.unwrap_or(false);
 
-    let reader = server.db.reader();
+    let reader = server.db.reader().map_err(super::to_error_data)?;
     let results = queries::query_nodes_filtered(
         &reader,
         params.query.as_deref(),

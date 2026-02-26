@@ -85,11 +85,17 @@ impl FileWatcher {
                         );
                         // Incremental graph update instead of full rebuild
                         if !report.changed_file_ids.is_empty() {
-                            let reader = db.reader();
-                            if let Err(e) =
-                                graph.incremental_update(&reader, &report.changed_file_ids)
-                            {
-                                tracing::error!(error = %e, "Incremental graph update failed");
+                            match db.reader() {
+                                Ok(reader) => {
+                                    if let Err(e) =
+                                        graph.incremental_update(&reader, &report.changed_file_ids)
+                                    {
+                                        tracing::error!(error = %e, "Incremental graph update failed");
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!(error = %e, "Failed to acquire reader lock")
+                                }
                             }
                         }
                     }

@@ -10,7 +10,7 @@ pub async fn handle(
 ) -> Result<CallToolResult, ErrorData> {
     let limit = validation::validate_limit(params.limit, 20)?;
 
-    let reader = server.db.reader();
+    let reader = server.db.reader().map_err(super::to_error_data)?;
     let results =
         queries::list_sessions_with_counts(&reader, limit).map_err(super::to_error_data)?;
 

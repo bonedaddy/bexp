@@ -8,7 +8,7 @@ pub async fn handle(server: &BexpServer) -> Result<CallToolResult, ErrorData> {
         return Ok(result);
     }
 
-    let conn = server.db.writer();
+    let conn = server.db.writer().map_err(super::to_error_data)?;
 
     let stale_count = observation::detect_staleness(&conn).map_err(super::to_error_data)?;
 

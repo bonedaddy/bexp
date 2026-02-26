@@ -61,7 +61,7 @@ fn full_index_then_graph_has_correct_topology() -> Result<()> {
     assert_eq!(report.file_count, 2);
 
     let graph = GraphEngine::new();
-    graph.build_from_db(&db.reader())?;
+    graph.build_from_db(&db.reader().unwrap())?;
 
     assert!(
         graph.node_count() >= 2,
@@ -101,7 +101,7 @@ fn capsule_generation_returns_relevant_content() -> Result<()> {
     indexer.full_index()?;
 
     let graph = Arc::new(GraphEngine::new());
-    graph.build_from_db(&db.reader())?;
+    graph.build_from_db(&db.reader().unwrap())?;
 
     let skeletonizer = Arc::new(Skeletonizer::new(db.clone()));
     let memory = Arc::new(MemoryService::new(db.clone(), graph.clone()));
@@ -125,7 +125,7 @@ fn incremental_reindex_updates_graph() -> Result<()> {
     indexer.full_index()?;
 
     let graph = GraphEngine::new();
-    graph.build_from_db(&db.reader())?;
+    graph.build_from_db(&db.reader().unwrap())?;
     let initial_node_count = graph.node_count();
 
     // Add a new file that calls the original function
@@ -135,7 +135,7 @@ fn incremental_reindex_updates_graph() -> Result<()> {
     let extra_path = workspace.path().join("extra.rs");
     indexer.incremental_reindex(&[extra_path])?;
 
-    graph.rebuild_from_db(&db.reader())?;
+    graph.rebuild_from_db(&db.reader().unwrap())?;
 
     assert!(
         graph.node_count() > initial_node_count,
@@ -215,7 +215,7 @@ fn memory_observations_persist_across_sessions() -> Result<()> {
     indexer.full_index()?;
 
     let graph = Arc::new(GraphEngine::new());
-    graph.build_from_db(&db.reader())?;
+    graph.build_from_db(&db.reader().unwrap())?;
 
     let memory = MemoryService::new(db.clone(), graph);
 
@@ -261,7 +261,7 @@ fn multi_language_indexing() -> Result<()> {
     let report = indexer.full_index()?;
     assert_eq!(report.file_count, 3, "should index exactly 3 files");
 
-    let reader = db.reader();
+    let reader = db.reader().unwrap();
     let stats = queries::get_index_stats(&reader)?;
     assert_eq!(stats.file_count, 3);
 
@@ -304,7 +304,7 @@ fn cross_file_references_create_call_edges() -> Result<()> {
 
     indexer.full_index()?;
 
-    let reader = db.reader();
+    let reader = db.reader().unwrap();
     let edges = queries::get_all_edges(&reader)?;
     assert!(
         edges.iter().any(|e| e.kind == "calls"),

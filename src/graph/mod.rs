@@ -479,7 +479,7 @@ mod tests {
     #[test]
     fn build_from_db_loads_nodes_and_edges() {
         let (db, graph) = setup_graph_db();
-        let conn = db.writer();
+        let conn = db.writer().unwrap();
 
         let f1 = insert_file(&conn, "a.rs");
         let f2 = insert_file(&conn, "b.rs");
@@ -488,7 +488,7 @@ mod tests {
         queries::insert_edge(&conn, n1, n2, "calls", 0.9, None).unwrap();
         drop(conn);
 
-        graph.build_from_db(&db.reader()).unwrap();
+        graph.build_from_db(&db.reader().unwrap()).unwrap();
         assert_eq!(graph.node_count(), 2);
         assert_eq!(graph.edge_count(), 1);
     }
@@ -496,7 +496,7 @@ mod tests {
     #[test]
     fn incremental_update_removes_and_readds_nodes() {
         let (db, graph) = setup_graph_db();
-        let conn = db.writer();
+        let conn = db.writer().unwrap();
 
         let f1 = insert_file(&conn, "a.rs");
         let f2 = insert_file(&conn, "b.rs");
@@ -508,21 +508,23 @@ mod tests {
         queries::insert_edge(&conn, n2, n3, "calls", 0.9, None).unwrap();
         drop(conn);
 
-        graph.build_from_db(&db.reader()).unwrap();
+        graph.build_from_db(&db.reader().unwrap()).unwrap();
         assert_eq!(graph.node_count(), 3);
         assert_eq!(graph.edge_count(), 2);
 
         // Re-insert file b with different node (insert_file upserts and cascades old nodes)
         let f2_new;
         {
-            let conn = db.writer();
+            let conn = db.writer().unwrap();
             f2_new = queries::insert_file(&conn, "b.rs", "rust", "hash2", 1, 100).unwrap();
             let n2_new = insert_node(&conn, f2_new, "bar_new");
             queries::insert_edge(&conn, n1, n2_new, "calls", 0.8, None).unwrap();
         }
 
         // Incremental update for file b (use the new file_id)
-        graph.incremental_update(&db.reader(), &[f2_new]).unwrap();
+        graph
+            .incremental_update(&db.reader().unwrap(), &[f2_new])
+            .unwrap();
 
         // Should still have 3 nodes (old bar removed, new bar_new added)
         assert_eq!(graph.node_count(), 3);
@@ -533,7 +535,7 @@ mod tests {
     #[test]
     fn incremental_update_falls_back_to_full_rebuild_when_large_change() {
         let (db, graph) = setup_graph_db();
-        let conn = db.writer();
+        let conn = db.writer().unwrap();
 
         // Only 2 nodes total
         let f1 = insert_file(&conn, "a.rs");
@@ -542,19 +544,21 @@ mod tests {
         let _n2 = insert_node(&conn, f2, "bar");
         drop(conn);
 
-        graph.build_from_db(&db.reader()).unwrap();
+        graph.build_from_db(&db.reader().unwrap()).unwrap();
         assert_eq!(graph.node_count(), 2);
 
         // Change both files -> >20% threshold
         // (Since both files changed, that's 100% of nodes)
-        graph.incremental_update(&db.reader(), &[f1, f2]).unwrap();
+        graph
+            .incremental_update(&db.reader().unwrap(), &[f1, f2])
+            .unwrap();
         assert_eq!(graph.node_count(), 2); // Still 2 after full rebuild
     }
 
     #[test]
     fn bridge_candidates_finds_intermediate_nodes() {
         let (db, graph) = setup_graph_db();
-        let conn = db.writer();
+        let conn = db.writer().unwrap();
 
         let f1 = insert_file(&conn, "a.rs");
         let f2 = insert_file(&conn, "b.rs");
@@ -568,7 +572,7 @@ mod tests {
         queries::insert_edge(&conn, b, c, "calls", 0.9, None).unwrap();
         drop(conn);
 
-        graph.build_from_db(&db.reader()).unwrap();
+        graph.build_from_db(&db.reader().unwrap()).unwrap();
 
         // Pivots are {A, C}, should find B as bridge
         let pivots: HashSet<i64> = [a, c].into_iter().collect();
@@ -581,7 +585,7 @@ mod tests {
     #[test]
     fn bridge_candidates_excludes_already_included() {
         let (db, graph) = setup_graph_db();
-        let conn = db.writer();
+        let conn = db.writer().unwrap();
 
         let f1 = insert_file(&conn, "a.rs");
         let f2 = insert_file(&conn, "b.rs");
@@ -591,7 +595,7 @@ mod tests {
         queries::insert_edge(&conn, a, b, "calls", 0.9, None).unwrap();
         drop(conn);
 
-        graph.build_from_db(&db.reader()).unwrap();
+        graph.build_from_db(&db.reader().unwrap()).unwrap();
 
         // Both A and B already included
         let pivots: HashSet<i64> = [a].into_iter().collect();

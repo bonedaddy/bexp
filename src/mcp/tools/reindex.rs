@@ -22,7 +22,7 @@ pub async fn handle(
 
     // Rebuild graph after indexing
     {
-        let reader = server.db.reader();
+        let reader = server.db.reader().map_err(super::to_error_data)?;
         server
             .graph
             .rebuild_from_db(&reader)

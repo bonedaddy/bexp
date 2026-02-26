@@ -14,7 +14,7 @@ pub async fn handle(
         return Ok(result);
     }
 
-    let reader = server.db.reader();
+    let reader = server.db.reader().map_err(super::to_error_data)?;
     let results = queries::query_edges_filtered(
         &reader,
         params.symbol.as_deref(),
