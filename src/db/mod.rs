@@ -10,8 +10,8 @@ use rusqlite::Connection;
 
 use crate::error::{BexpError, Result};
 
-/// Number of reader connections in the pool, allowing concurrent read access.
-const READER_POOL_SIZE: usize = 4;
+/// Default number of reader connections in the pool.
+const DEFAULT_READER_POOL_SIZE: usize = 4;
 
 pub struct Database {
     writer: Mutex<Connection>,
@@ -21,6 +21,12 @@ pub struct Database {
 
 impl Database {
     pub fn open(path: &Path) -> Result<Self> {
+        Self::open_with_pool_size(path, DEFAULT_READER_POOL_SIZE)
+    }
+
+    pub fn open_with_pool_size(path: &Path, pool_size: usize) -> Result<Self> {
+        tracing::debug!(path = %path.display(), pool_size = pool_size, "Opening database");
+        let pool_size = pool_size.max(1);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -29,8 +35,8 @@ impl Database {
         Self::configure_connection(&writer)?;
         Self::apply_schema(&mut writer)?;
 
-        let mut readers = Vec::with_capacity(READER_POOL_SIZE);
-        for _ in 0..READER_POOL_SIZE {
+        let mut readers = Vec::with_capacity(pool_size);
+        for _ in 0..pool_size {
             let reader = Connection::open(path)?;
             Self::configure_connection(&reader)?;
             readers.push(Mutex::new(reader));
@@ -62,8 +68,8 @@ impl Database {
         Self::configure_connection(&writer)?;
         Self::apply_schema(&mut writer)?;
 
-        let mut readers = Vec::with_capacity(READER_POOL_SIZE);
-        for _ in 0..READER_POOL_SIZE {
+        let mut readers = Vec::with_capacity(DEFAULT_READER_POOL_SIZE);
+        for _ in 0..DEFAULT_READER_POOL_SIZE {
             let reader = Connection::open_with_flags(
                 &uri,
                 rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
@@ -112,8 +118,10 @@ impl Database {
     }
 
     pub fn flush_wal(&self) -> Result<()> {
+        tracing::debug!("Flushing WAL");
         let conn = self.writer();
         conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        tracing::debug!("WAL flush complete");
         Ok(())
     }
 }

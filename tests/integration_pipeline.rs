@@ -183,18 +183,15 @@ impl Widget {
 
     assert!(
         skeleton.contains("Widget"),
-        "skeleton should contain struct name 'Widget', got: {}",
-        skeleton
+        "skeleton should contain struct name 'Widget', got: {skeleton}"
     );
     assert!(
         skeleton.contains("new"),
-        "skeleton should contain method name 'new', got: {}",
-        skeleton
+        "skeleton should contain method name 'new', got: {skeleton}"
     );
     assert!(
         skeleton.contains("display"),
-        "skeleton should contain method name 'display', got: {}",
-        skeleton
+        "skeleton should contain method name 'display', got: {skeleton}"
     );
     assert!(
         skeleton.len() < source.len(),
@@ -275,18 +272,15 @@ fn multi_language_indexing() -> Result<()> {
         .collect();
     assert!(
         languages.contains(&"rust"),
-        "should contain rust, got {:?}",
-        languages
+        "should contain rust, got {languages:?}"
     );
     assert!(
         languages.contains(&"python"),
-        "should contain python, got {:?}",
-        languages
+        "should contain python, got {languages:?}"
     );
     assert!(
         languages.contains(&"typescript"),
-        "should contain typescript, got {:?}",
-        languages
+        "should contain typescript, got {languages:?}"
     );
 
     Ok(())

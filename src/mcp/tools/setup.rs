@@ -18,18 +18,15 @@ pub async fn handle(server: &BexpServer, params: SetupParams) -> Result<CallTool
 
     let config_content = generate_config(&project_type);
 
-    std::fs::create_dir_all(&bexp_dir)
-        .map_err(|e| ErrorData::internal_error(format!("Failed to create .bexp dir: {e}"), None))?;
+    std::fs::create_dir_all(&bexp_dir).map_err(super::to_error_data)?;
 
-    std::fs::write(&config_path, &config_content)
-        .map_err(|e| ErrorData::internal_error(format!("Failed to write config: {e}"), None))?;
+    std::fs::write(&config_path, &config_content).map_err(super::to_error_data)?;
 
     // Create .gitignore for .bexp
     let gitignore_path = bexp_dir.join(".gitignore");
     if !gitignore_path.exists() || force {
-        std::fs::write(&gitignore_path, "index.db\nindex.db-wal\nindex.db-shm\n").map_err(|e| {
-            ErrorData::internal_error(format!("Failed to write .gitignore: {e}"), None)
-        })?;
+        std::fs::write(&gitignore_path, "index.db\nindex.db-wal\nindex.db-shm\n")
+            .map_err(super::to_error_data)?;
     }
 
     let mut output = String::new();
@@ -42,7 +39,7 @@ pub async fn handle(server: &BexpServer, params: SetupParams) -> Result<CallTool
     output.push_str("- `.bexp/config.toml`\n");
     output.push_str("- `.bexp/.gitignore`\n\n");
     output.push_str("**Configuration:**\n");
-    output.push_str(&format!("```toml\n{}\n```\n", config_content));
+    output.push_str(&format!("```toml\n{config_content}\n```\n"));
 
     Ok(CallToolResult::success(vec![Content::text(output)]))
 }
@@ -155,7 +152,7 @@ fn generate_config(project_type: &ProjectType) -> String {
 
     config.push_str("exclude_patterns = [\n");
     for (i, e) in excludes.iter().enumerate() {
-        config.push_str(&format!("    \"{}\"", e));
+        config.push_str(&format!("    \"{e}\""));
         if i < excludes.len() - 1 {
             config.push(',');
         }

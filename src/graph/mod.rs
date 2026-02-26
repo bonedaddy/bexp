@@ -55,18 +55,20 @@ impl GraphEngine {
 
         let pagerank = centrality::compute_pagerank(&graph, 0.85, 20, 1e-6);
 
-        *self
-            .graph
-            .write()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))? = graph;
+        *self.graph.write().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })? = graph;
         *self
             .id_to_index
             .write()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))? = id_map;
-        *self
-            .pagerank
-            .write()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))? = pagerank;
+            .map_err(|_| BexpError::LockPoisoned {
+                component: "graph".into(),
+            })? = id_map;
+        *self.pagerank.write().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })? = pagerank;
+
+        crate::metrics::set_graph_stats(self.node_count(), self.edge_count());
 
         Ok(())
     }
@@ -106,10 +108,9 @@ impl GraphEngine {
         depth: usize,
         edge_kinds: Option<&[String]>,
     ) -> Result<String> {
-        let graph = self
-            .graph
-            .read()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
+        let graph = self.graph.read().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })?;
 
         // Find the node
         let node_idx = graph
@@ -118,7 +119,7 @@ impl GraphEngine {
                 let node = &graph[idx];
                 node.name == symbol || node.qualified_name.as_deref() == Some(symbol)
             })
-            .ok_or_else(|| BexpError::NotFound(format!("Symbol not found: {}", symbol)))?;
+            .ok_or_else(|| BexpError::NotFound(format!("Symbol not found: {symbol}")))?;
 
         let result = match direction {
             "callers" => traversal::get_callers(&graph, node_idx, depth, edge_kinds),
@@ -129,22 +130,16 @@ impl GraphEngine {
                 result.push_str(&traversal::get_callees(&graph, node_idx, depth, edge_kinds));
                 result
             }
-            _ => {
-                return Err(BexpError::Graph(format!(
-                    "Invalid direction: {}",
-                    direction
-                )))
-            }
+            _ => return Err(BexpError::Graph(format!("Invalid direction: {direction}"))),
         };
 
         Ok(result)
     }
 
     pub fn find_paths(&self, from: &str, to: &str, max_depth: usize) -> Result<String> {
-        let graph = self
-            .graph
-            .read()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
+        let graph = self.graph.read().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })?;
 
         let from_idx = graph
             .node_indices()
@@ -152,7 +147,7 @@ impl GraphEngine {
                 let node = &graph[idx];
                 node.name == from || node.qualified_name.as_deref() == Some(from)
             })
-            .ok_or_else(|| BexpError::NotFound(format!("Source symbol not found: {}", from)))?;
+            .ok_or_else(|| BexpError::NotFound(format!("Source symbol not found: {from}")))?;
 
         let to_idx = graph
             .node_indices()
@@ -160,18 +155,17 @@ impl GraphEngine {
                 let node = &graph[idx];
                 node.name == to || node.qualified_name.as_deref() == Some(to)
             })
-            .ok_or_else(|| BexpError::NotFound(format!("Target symbol not found: {}", to)))?;
+            .ok_or_else(|| BexpError::NotFound(format!("Target symbol not found: {to}")))?;
 
         let paths = traversal::find_all_paths(&graph, from_idx, to_idx, max_depth);
 
         if paths.is_empty() {
             return Ok(format!(
-                "No paths found from `{}` to `{}` within {} hops.",
-                from, to, max_depth
+                "No paths found from `{from}` to `{to}` within {max_depth} hops."
             ));
         }
 
-        let mut output = format!("# Paths from `{}` to `{}`\n\n", from, to);
+        let mut output = format!("# Paths from `{from}` to `{to}`\n\n");
         for (i, path) in paths.iter().enumerate() {
             output.push_str(&format!("## Path {} ({} hops)\n\n", i + 1, path.len() - 1));
             for (j, idx) in path.iter().enumerate() {
@@ -320,21 +314,22 @@ impl GraphEngine {
         // If >20% of nodes affected, fall back to full rebuild
         if total_nodes > 0 && changed_nodes.len() * 5 > total_nodes {
             tracing::info!(
-                "Incremental update: {} changed nodes > 20% of {} total, doing full rebuild",
-                changed_nodes.len(),
-                total_nodes
+                changed_nodes = changed_nodes.len(),
+                total_nodes = total_nodes,
+                "Incremental update: >20% changed, doing full rebuild"
             );
             return self.build_from_db(conn);
         }
 
-        let mut graph = self
-            .graph
-            .write()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
+        let mut graph = self.graph.write().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })?;
         let mut id_map = self
             .id_to_index
             .write()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
+            .map_err(|_| BexpError::LockPoisoned {
+                component: "graph".into(),
+            })?;
 
         // Collect indices to remove: all nodes belonging to changed files
         let changed_file_set: HashSet<i64> = changed_file_ids.iter().copied().collect();
@@ -401,21 +396,19 @@ impl GraphEngine {
         drop(id_map);
 
         // Recompute PageRank (global property, must be full)
-        let graph_ref = self
-            .graph
-            .read()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
+        let graph_ref = self.graph.read().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })?;
         let pagerank = centrality::compute_pagerank(&graph_ref, 0.85, 20, 1e-6);
         drop(graph_ref);
-        *self
-            .pagerank
-            .write()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))? = pagerank;
+        *self.pagerank.write().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })? = pagerank;
 
         tracing::info!(
-            "Incremental graph update: removed {} old nodes, added {} new nodes",
-            indices_to_remove.len(),
-            new_nodes.len()
+            removed = indices_to_remove.len(),
+            added = new_nodes.len(),
+            "Incremental graph update complete"
         );
 
         Ok(())

@@ -1,16 +1,17 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::mcp::server::{BexpServer, GraphStatsParams};
+use crate::mcp::validation;
 
 pub async fn handle(
     server: &BexpServer,
     params: GraphStatsParams,
 ) -> Result<CallToolResult, ErrorData> {
+    let top_n = validation::validate_limit(params.top_n, 20)?;
+
     if let Some(result) = super::wait_for_index(&server.indexer).await {
         return Ok(result);
     }
-
-    let top_n = params.top_n.unwrap_or(20);
 
     let node_count = server.graph.node_count();
     let edge_count = server.graph.edge_count();
@@ -18,20 +19,20 @@ pub async fn handle(
     let top_nodes = server.graph.get_top_pagerank(top_n, params.kind.as_deref());
 
     let mut output = String::from("# Graph Statistics\n\n");
-    output.push_str(&format!("- **Nodes:** {}\n", node_count));
-    output.push_str(&format!("- **Edges:** {}\n\n", edge_count));
+    output.push_str(&format!("- **Nodes:** {node_count}\n"));
+    output.push_str(&format!("- **Edges:** {edge_count}\n\n"));
 
     if !edge_kinds.is_empty() {
         output.push_str("## Edge Kind Breakdown\n\n");
         for (kind, count) in &edge_kinds {
-            output.push_str(&format!("- {}: {}\n", kind, count));
+            output.push_str(&format!("- {kind}: {count}\n"));
         }
         output.push('\n');
     }
 
     if !top_nodes.is_empty() {
         let kind_note = if let Some(k) = &params.kind {
-            format!(" (kind: {})", k)
+            format!(" (kind: {k})")
         } else {
             String::new()
         };

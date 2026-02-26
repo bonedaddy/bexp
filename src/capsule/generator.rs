@@ -16,7 +16,7 @@ pub fn assemble_capsule(
 
     // Header
     output.push_str("# Context Capsule\n\n");
-    output.push_str(&format!("**Query:** {}\n", query));
+    output.push_str(&format!("**Query:** {query}\n"));
     output.push_str(&format!("**Intent:** {}\n", intent.as_str()));
     output.push_str(&format!(
         "**Token usage:** ~{} tokens ({} pivot excerpts, {} bridges, {} skeleton files)\n\n",

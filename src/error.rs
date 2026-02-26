@@ -15,6 +15,7 @@ pub enum BexpError {
     Parse { file: String, reason: String },
 
     #[error("Index error: {0}")]
+    #[allow(dead_code)]
     Index(String),
 
     #[error("Graph error: {0}")]
@@ -46,6 +47,15 @@ pub enum BexpError {
     #[error("Token budget exceeded: requested {requested}, max {max}")]
     #[allow(dead_code)]
     BudgetExceeded { requested: usize, max: usize },
+
+    #[error("File too large: {path} is {size} bytes (max {max})")]
+    FileTooLarge { path: String, size: u64, max: u64 },
+
+    #[error("Lock poisoned in {component}")]
+    LockPoisoned { component: String },
+
+    #[error("Unsupported language for extension: {extension}")]
+    UnsupportedLanguage { extension: String },
 }
 
 pub type Result<T> = std::result::Result<T, BexpError>;

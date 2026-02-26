@@ -64,7 +64,7 @@ impl FileWatcher {
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("File watcher error: {:?}", e);
+                        tracing::warn!(error = ?e, "File watcher error");
                     }
                 }
             }
@@ -74,14 +74,14 @@ impl FileWatcher {
         let indexer_bg = indexer.clone();
         tokio::spawn(async move {
             while let Some(paths) = rx.recv().await {
-                tracing::debug!("File changes detected: {} files", paths.len());
+                tracing::debug!(file_count = paths.len(), "File changes detected");
                 match indexer_bg.incremental_reindex(&paths) {
                     Ok(report) => {
                         tracing::info!(
-                            "Incremental reindex: {} files, {} nodes, {} edges",
-                            report.file_count,
-                            report.node_count,
-                            report.edge_count
+                            files = report.file_count,
+                            nodes = report.node_count,
+                            edges = report.edge_count,
+                            "Incremental reindex complete"
                         );
                         // Incremental graph update instead of full rebuild
                         if !report.changed_file_ids.is_empty() {
@@ -89,12 +89,12 @@ impl FileWatcher {
                             if let Err(e) =
                                 graph.incremental_update(&reader, &report.changed_file_ids)
                             {
-                                tracing::error!("Incremental graph update failed: {}", e);
+                                tracing::error!(error = %e, "Incremental graph update failed");
                             }
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Incremental reindex failed: {}", e);
+                        tracing::error!(error = %e, "Incremental reindex failed");
                     }
                 }
             }

@@ -13,6 +13,7 @@ pub struct Session {
 }
 
 pub fn ensure_session(conn: &Connection, session_id: &str) -> Result<()> {
+    tracing::debug!(session_id = session_id, "Ensuring session exists");
     conn.execute(
         "INSERT INTO sessions (id) VALUES (?1)
          ON CONFLICT(id) DO UPDATE SET updated_at = datetime('now')",
@@ -83,7 +84,13 @@ pub fn get_previous_sessions(
                 summary: row.get(4)?,
             })
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| match r {
+            Ok(v) => Some(v),
+            Err(e) => {
+                tracing::trace!(error = %e, "Skipping row due to error");
+                None
+            }
+        })
         .collect();
     Ok(rows)
 }

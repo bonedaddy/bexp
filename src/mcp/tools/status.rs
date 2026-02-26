@@ -6,8 +6,7 @@ use crate::mcp::server::BexpServer;
 pub async fn handle(server: &BexpServer) -> Result<CallToolResult, ErrorData> {
     let stats = {
         let reader = server.db.reader();
-        queries::get_index_stats(&reader)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
+        queries::get_index_stats(&reader).map_err(super::to_error_data)?
     };
 
     let watcher_active = server.indexer.watcher_active();
@@ -29,7 +28,7 @@ pub async fn handle(server: &BexpServer) -> Result<CallToolResult, ErrorData> {
     if !stats.language_breakdown.is_empty() {
         output.push_str("\n## Language Breakdown\n\n");
         for (lang, count) in &stats.language_breakdown {
-            output.push_str(&format!("- **{}:** {} files\n", lang, count));
+            output.push_str(&format!("- **{lang}:** {count} files\n"));
         }
     }
 

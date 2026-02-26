@@ -56,6 +56,7 @@ impl IndexerService {
 
     pub fn set_index_ready(&self, ready: bool) {
         self.index_ready.store(ready, Ordering::Relaxed);
+        crate::metrics::set_index_ready(ready);
     }
 
     /// Compute a deterministic hash of all (relative_path, mtime_ns) pairs
@@ -84,7 +85,7 @@ impl IndexerService {
         }
 
         let hash = xxhash_rust::xxh3::xxh3_64(&hasher_data);
-        Ok(format!("{:016x}", hash))
+        Ok(format!("{hash:016x}"))
     }
 
     /// Write an extracted file's nodes, edges, and unresolved refs into the database.
@@ -166,8 +167,8 @@ impl IndexerService {
             if let Ok(Some(stored_hash)) = queries::get_metadata(&reader, "files_mtime_hash") {
                 if stored_hash == fs_hash {
                     tracing::info!(
-                        "Skipping full index: filesystem unchanged (hash: {})",
-                        &fs_hash[..8]
+                        hash = &fs_hash[..8],
+                        "Skipping full index: filesystem unchanged"
                     );
                     return Ok(IndexReport {
                         file_count: 0,
@@ -182,7 +183,7 @@ impl IndexerService {
         let scanner = Scanner::new(&self.config);
         let files = scanner.scan(&self.workspace_root)?;
 
-        tracing::info!("Scanning found {} files to index", files.len());
+        tracing::info!(file_count = files.len(), "Scanning found files to index");
 
         // Load stored mtimes for per-file skip
         let stored_mtimes = {
@@ -217,7 +218,7 @@ impl IndexerService {
                 match self.parse_file(path, lang) {
                     Ok(extracted) => Some((path.clone(), extracted)),
                     Err(e) => {
-                        tracing::warn!("Failed to parse {}: {}", path.display(), e);
+                        tracing::warn!(path = %path.display(), error = %e, "Failed to parse file");
                         None
                     }
                 }
@@ -225,9 +226,9 @@ impl IndexerService {
             .collect();
 
         tracing::info!(
-            "Parsed {} changed files (of {} total), writing to database",
-            extracted.len(),
-            files.len()
+            changed = extracted.len(),
+            total = files.len(),
+            "Parsed changed files, writing to database"
         );
 
         // Sequential batch write — use rusqlite Transaction for automatic rollback on error
@@ -276,11 +277,12 @@ impl IndexerService {
         let _ = queries::set_metadata(&self.db.writer(), "files_mtime_hash", &fs_hash);
 
         tracing::info!(
-            "Index complete: {} files, {} nodes, {} edges",
-            file_count,
-            node_count,
-            edge_count
+            files = file_count,
+            nodes = node_count,
+            edges = edge_count,
+            "Index complete"
         );
+        crate::metrics::record_index_complete(file_count, node_count, edge_count);
 
         Ok(IndexReport {
             file_count,
@@ -357,7 +359,7 @@ impl IndexerService {
                     });
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to re-parse {}: {}", path.display(), e);
+                    tracing::warn!(path = %path.display(), error = %e, "Failed to re-parse file");
                 }
             }
         }
@@ -419,10 +421,11 @@ impl IndexerService {
         let content = std::fs::read_to_string(path)?;
 
         if content.len() > self.config.max_file_size {
-            return Err(BexpError::Index(format!(
-                "File too large: {} bytes",
-                content.len()
-            )));
+            return Err(BexpError::FileTooLarge {
+                path: path.display().to_string(),
+                size: content.len() as u64,
+                max: self.config.max_file_size as u64,
+            });
         }
 
         let metadata = std::fs::metadata(path)?;
@@ -458,11 +461,11 @@ impl IndexerService {
         // After local resolution, try cross-workspace resolution
         let cross = crate::workspace::cross_ref::resolve_cross_workspace(&conn, &self.config)
             .unwrap_or_else(|e| {
-                tracing::warn!("Cross-workspace resolution failed: {}", e);
+                tracing::warn!(error = %e, "Cross-workspace resolution failed");
                 0
             });
         if cross > 0 {
-            tracing::info!("Cross-workspace resolution: {} edges created", cross);
+            tracing::info!(edges = cross, "Cross-workspace resolution created edges");
         }
 
         Ok(local + cross)

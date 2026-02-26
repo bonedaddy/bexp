@@ -26,6 +26,7 @@ impl Skeletonizer {
     }
 
     pub fn skeletonize(&self, file_path: &Path, level: DetailLevel) -> Result<String> {
+        tracing::trace!(path = %file_path.display(), level = ?level, "Skeletonize requested");
         // Check cache first
         let rel_path = file_path.to_string_lossy().to_string();
 
@@ -60,18 +61,22 @@ impl Skeletonizer {
                 };
 
                 if let Some(skeleton) = cached {
+                    tracing::trace!(path = %file_path.display(), "Skeleton cache hit");
                     return Ok(skeleton);
                 }
             }
         }
+
+        tracing::trace!(path = %file_path.display(), "Skeleton cache miss, generating");
 
         // Generate skeleton
         let source = std::fs::read_to_string(file_path)
             .map_err(|e| BexpError::Skeleton(format!("Cannot read file: {e}")))?;
 
         let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let lang = Language::from_extension(ext)
-            .ok_or_else(|| BexpError::Skeleton(format!("Unsupported language: {ext}")))?;
+        let lang = Language::from_extension(ext).ok_or_else(|| BexpError::UnsupportedLanguage {
+            extension: ext.to_string(),
+        })?;
 
         let skeleton = SkeletonTransformer::transform(&source, lang, level)?;
 

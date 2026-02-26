@@ -124,7 +124,7 @@ fn collapse_body(
             if first_line_items.is_empty() {
                 Some(format!("{}{}", sig_text.trim_end(), " { ... }"))
             } else {
-                Some(format!("{}{{\n{}\n}}", sig_text, first_line_items))
+                Some(format!("{sig_text}{{\n{first_line_items}\n}}"))
             }
         }
         DetailLevel::Detailed => {
@@ -158,7 +158,7 @@ fn extract_first_level_stubs(
                 // Get just the signature line
                 let text = &source[child.byte_range()];
                 let first_line = text.lines().next().unwrap_or("");
-                stubs.push(format!("    {}", first_line));
+                stubs.push(format!("    {first_line}"));
             }
         }
     }

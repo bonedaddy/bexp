@@ -2,16 +2,17 @@ use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::db::queries;
 use crate::mcp::server::{BexpServer, QueryEdgesParams};
+use crate::mcp::validation;
 
 pub async fn handle(
     server: &BexpServer,
     params: QueryEdgesParams,
 ) -> Result<CallToolResult, ErrorData> {
+    let limit = validation::validate_limit(params.limit, 50)?;
+
     if let Some(result) = super::wait_for_index(&server.indexer).await {
         return Ok(result);
     }
-
-    let limit = params.limit.unwrap_or(50);
 
     let reader = server.db.reader();
     let results = queries::query_edges_filtered(
@@ -22,7 +23,7 @@ pub async fn handle(
         params.direction.as_deref(),
         limit,
     )
-    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+    .map_err(super::to_error_data)?;
 
     if results.is_empty() {
         return Ok(CallToolResult::success(vec![Content::text(
@@ -43,7 +44,7 @@ pub async fn handle(
         let ctx = edge
             .context
             .as_deref()
-            .map(|c| format!(" [{}]", c))
+            .map(|c| format!(" [{c}]"))
             .unwrap_or_default();
         output.push_str(&format!(
             "- `{}` —[{}]→ `{}` (confidence: {:.2}){}\n  {} → {}\n",

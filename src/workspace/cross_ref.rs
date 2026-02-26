@@ -37,9 +37,9 @@ pub fn resolve_cross_workspace(conn: &Connection, config: &BexpConfig) -> Result
     }
 
     tracing::info!(
-        "Attempting cross-workspace resolution for {} refs across {} workspaces",
-        refs.len(),
-        config.workspace_group.len()
+        ref_count = refs.len(),
+        workspace_count = config.workspace_group.len(),
+        "Attempting cross-workspace resolution"
     );
 
     let mut insert_stmt = conn.prepare(
@@ -54,7 +54,7 @@ pub fn resolve_cross_workspace(conn: &Connection, config: &BexpConfig) -> Result
         let ext_conn = match open_external_db(workspace_path) {
             Ok(c) => c,
             Err(e) => {
-                tracing::warn!("Cannot open external workspace '{}': {}", workspace_path, e);
+                tracing::warn!(workspace = %workspace_path, error = %e, "Cannot open external workspace");
                 continue;
             }
         };
@@ -88,18 +88,15 @@ pub fn resolve_cross_workspace(conn: &Connection, config: &BexpConfig) -> Result
 
         if resolved_for_ws > 0 {
             tracing::info!(
-                "Cross-workspace '{}': resolved {} refs",
-                workspace_path,
-                resolved_for_ws
+                workspace = %workspace_path,
+                resolved = resolved_for_ws,
+                "Cross-workspace resolution for workspace"
             );
         }
         total += resolved_for_ws;
     }
 
-    tracing::info!(
-        "Cross-workspace resolution complete: {} edges created",
-        total
-    );
+    tracing::info!(edges = total, "Cross-workspace resolution complete");
     Ok(total)
 }
 

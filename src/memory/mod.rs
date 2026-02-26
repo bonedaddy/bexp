@@ -24,6 +24,11 @@ impl MemoryService {
         include_previous: bool,
         previous_limit: usize,
     ) -> Result<String> {
+        tracing::debug!(
+            session_id = ?session_id,
+            include_previous = include_previous,
+            "Loading session context"
+        );
         let conn = &*self.db.reader();
 
         let current_session = match session_id {
@@ -61,7 +66,7 @@ impl MemoryService {
                 ));
                 if obs.is_stale {
                     if let Some(reason) = &obs.stale_reason {
-                        output.push_str(&format!("**Stale reason:** {}\n\n", reason));
+                        output.push_str(&format!("**Stale reason:** {reason}\n\n"));
                     }
                 }
             }
@@ -79,7 +84,7 @@ impl MemoryService {
                         prev.id, prev.created_at
                     ));
                     if let Some(summary) = &prev.summary {
-                        output.push_str(&format!("{}\n\n", summary));
+                        output.push_str(&format!("{summary}\n\n"));
                     }
                     let obs = observation::get_observations_for_session(conn, &prev.id)?;
                     for o in obs.iter().take(5) {
@@ -128,6 +133,11 @@ impl MemoryService {
         symbols: Option<&[String]>,
         files: Option<&[String]>,
     ) -> Result<String> {
+        tracing::debug!(
+            session_id = session_id,
+            content_len = content.len(),
+            "Saving observation"
+        );
         let conn = self.db.writer();
 
         // Ensure session exists
@@ -166,9 +176,10 @@ impl MemoryService {
         // Auto-link: detect symbol names and file paths in content
         auto_link_observation(&conn, obs_id, content)?;
 
+        crate::metrics::record_observation_saved();
+
         Ok(format!(
-            "Observation saved (id: {}).\n**Headline:** {}",
-            obs_id, headline
+            "Observation saved (id: {obs_id}).\n**Headline:** {headline}"
         ))
     }
 }
@@ -289,6 +300,10 @@ fn auto_link_observation(conn: &rusqlite::Connection, obs_id: i64, content: &str
     // 1. PascalCase identifiers (3+ chars, starts with uppercase)
     // 2. Identifiers containing _ or :: (3+ chars)
     let candidates = extract_symbol_candidates(content);
+    tracing::debug!(
+        candidate_count = candidates.len(),
+        "Auto-linking observation symbols"
+    );
 
     // Auto-link symbols (up to 10)
     for candidate in candidates.iter().take(30) {
@@ -317,7 +332,9 @@ fn auto_link_observation(conn: &rusqlite::Connection, obs_id: i64, content: &str
 
         if let Some(nid) = node_id {
             if linked_nodes.insert(nid) {
-                let _ = observation::link_observation_symbol(conn, obs_id, nid);
+                if let Err(e) = observation::link_observation_symbol(conn, obs_id, nid) {
+                    tracing::debug!(error = %e, node_id = nid, "Failed to link observation symbol");
+                }
             }
         }
     }

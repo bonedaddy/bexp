@@ -109,7 +109,7 @@ fn extract_from_node(
             nodes.push(ExtractedNode {
                 kind: NodeKind::Module,
                 name: "<style>".to_string(),
-                qualified_name: Some(format!("{}::<style>", file_path)),
+                qualified_name: Some(format!("{file_path}::<style>")),
                 signature: None,
                 docstring: None,
                 line_start: node.start_position().row + 1,

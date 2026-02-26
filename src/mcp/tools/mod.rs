@@ -18,11 +18,38 @@ pub mod staleness;
 pub mod status;
 pub mod unresolved;
 
+#[cfg(test)]
+mod tests;
+
 use std::path::{Component, Path, PathBuf};
 
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::indexer::IndexerService;
+
+/// Convert any error into an `ErrorData` with a unique request ID for tracing.
+pub fn to_error_data(e: impl std::fmt::Display) -> ErrorData {
+    let request_id = uuid::Uuid::new_v4().to_string();
+    tracing::error!(request_id = %request_id, error = %e, "MCP tool error");
+    ErrorData::internal_error(format!("[{request_id}] {e}"), None)
+}
+
+/// Wrap a tool handler with metrics recording.
+pub async fn with_metrics<F, Fut>(tool_name: &str, handler: F) -> Result<CallToolResult, ErrorData>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<CallToolResult, ErrorData>>,
+{
+    crate::metrics::record_tool_call(tool_name);
+    let start = std::time::Instant::now();
+    let result = handler().await;
+    let duration = start.elapsed();
+    crate::metrics::record_tool_duration(tool_name, duration);
+    if result.is_err() {
+        crate::metrics::record_tool_error(tool_name);
+    }
+    result
+}
 
 /// Polls `index_ready()` for up to 60s (120 × 500ms).
 /// Returns `Some(result)` with a message if the index is not ready, `None` if ready.
@@ -59,7 +86,7 @@ pub fn validate_workspace_path(
         Ok(canonical) => {
             if !canonical.starts_with(&canonical_root) {
                 return Err(rmcp::model::ErrorData::invalid_params(
-                    format!("Path '{}' resolves outside the workspace", user_path),
+                    format!("Path '{user_path}' resolves outside the workspace"),
                     None,
                 ));
             }
@@ -70,7 +97,7 @@ pub fn validate_workspace_path(
             let normalized = normalize_path(&joined);
             if !normalized.starts_with(&canonical_root) {
                 return Err(rmcp::model::ErrorData::invalid_params(
-                    format!("Path '{}' resolves outside the workspace", user_path),
+                    format!("Path '{user_path}' resolves outside the workspace"),
                     None,
                 ));
             }
