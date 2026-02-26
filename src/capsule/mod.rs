@@ -74,7 +74,13 @@ impl CapsuleGenerator {
         tracing::debug!(intent = ?intent, "Detected intent");
 
         // Check cache (only for non-session queries since memory context varies)
-        let generation = queries::get_index_generation(&self.db.reader()).unwrap_or(0);
+        let generation = match queries::get_index_generation(&self.db.reader()) {
+            Ok(g) => g,
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to read index generation; bypassing cache");
+                u64::MAX
+            }
+        };
         if session_id.is_none() {
             if let Some(cached) = self
                 .cache
@@ -98,9 +104,8 @@ impl CapsuleGenerator {
             return Ok("No relevant code found for the given query.".to_string());
         }
 
-        // 3. Allocate token budget (memory_budget_pct is 0.0..1.0)
-        let memory_pct = (self.config.memory_budget_pct * 100.0) as usize;
-        let memory_budget = token_budget * memory_pct / 100;
+        // 3. Allocate token budget
+        let memory_budget = token_budget * self.config.memory_budget_pct / 100;
         let code_budget = token_budget - memory_budget;
 
         // 4. Select pivots and supporting files
@@ -127,7 +132,17 @@ impl CapsuleGenerator {
 
         // 6. Add memory context if session provided
         if let Some(sid) = session_id {
-            let memory_context = self.memory.search(query, 5, Some(sid)).unwrap_or_default();
+            let memory_context = match self.memory.search(query, 5, Some(sid)) {
+                Ok(ctx) => ctx,
+                Err(e) => {
+                    tracing::error!(
+                        session_id = sid,
+                        error = %e,
+                        "Memory search failed; capsule generated without session context"
+                    );
+                    String::new()
+                }
+            };
             if !memory_context.is_empty() {
                 output.push_str("\n---\n\n# Relevant Observations\n\n");
                 output.push_str(&memory_context);

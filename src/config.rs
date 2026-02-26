@@ -32,8 +32,9 @@ pub struct BexpConfig {
     #[serde(default = "default_watcher_debounce_ms")]
     pub watcher_debounce_ms: u64,
 
+    /// Percentage of token budget reserved for memory/observation context (0..100).
     #[serde(default = "default_memory_budget_pct")]
-    pub memory_budget_pct: f64,
+    pub memory_budget_pct: usize,
 
     #[serde(default = "default_session_compress_after_hours")]
     pub session_compress_after_hours: u64,
@@ -113,8 +114,8 @@ fn default_max_file_size() -> usize {
 fn default_watcher_debounce_ms() -> u64 {
     500
 }
-fn default_memory_budget_pct() -> f64 {
-    0.10
+fn default_memory_budget_pct() -> usize {
+    10
 }
 fn default_session_compress_after_hours() -> u64 {
     2
@@ -211,14 +212,38 @@ fn default_excludes() -> Vec<String> {
 impl BexpConfig {
     pub fn load(workspace_root: &Path) -> Result<Self> {
         let config_path = workspace_root.join(".bexp/config.toml");
-        if config_path.exists() {
+        let config = if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)
                 .map_err(|e| BexpError::Config(format!("Failed to read config: {e}")))?;
             let config: Self = toml::from_str(&content)?;
-            Ok(config)
+            config
         } else {
-            Ok(Self::default())
+            Self::default()
+        };
+        config.validate()?;
+        Ok(config)
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.overhead_reserve_pct >= 100 {
+            return Err(BexpError::Config(format!(
+                "overhead_reserve_pct must be < 100, got {}",
+                self.overhead_reserve_pct
+            )));
         }
+        if self.pivot_budget_pct + self.bridge_budget_pct > 100 {
+            return Err(BexpError::Config(format!(
+                "pivot_budget_pct ({}) + bridge_budget_pct ({}) must be <= 100",
+                self.pivot_budget_pct, self.bridge_budget_pct
+            )));
+        }
+        if self.memory_budget_pct >= 100 {
+            return Err(BexpError::Config(format!(
+                "memory_budget_pct must be < 100, got {}",
+                self.memory_budget_pct
+            )));
+        }
+        Ok(())
     }
 
     pub fn db_path(&self, workspace_root: &Path) -> PathBuf {
@@ -298,7 +323,7 @@ exclude_patterns = ["generated", "cache"]
 db_path = "data/custom.db"
 max_file_size = 42
 watcher_debounce_ms = 999
-memory_budget_pct = 0.25
+memory_budget_pct = 25
 session_compress_after_hours = 7
 observation_ttl_days = 30
 "#,
@@ -316,7 +341,7 @@ observation_ttl_days = 30
         assert_eq!(config.db_path, "data/custom.db");
         assert_eq!(config.max_file_size, 42);
         assert_eq!(config.watcher_debounce_ms, 999);
-        assert!((config.memory_budget_pct - 0.25).abs() < f64::EPSILON);
+        assert_eq!(config.memory_budget_pct, 25);
         assert_eq!(config.session_compress_after_hours, 7);
         assert_eq!(config.observation_ttl_days, 30);
     }

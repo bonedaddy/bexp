@@ -41,7 +41,7 @@ impl CapsuleCache {
     }
 
     /// Try to get a cached result. Returns None on miss or expired entry.
-    /// Proactively evicts expired entries when encountered.
+    /// When the looked-up entry is expired, evicts all expired entries from the cache.
     pub fn get(
         &self,
         query: &str,
@@ -50,7 +50,13 @@ impl CapsuleCache {
         index_generation: u64,
     ) -> Option<String> {
         let key = Self::make_key(query, token_budget, intent, index_generation);
-        let entries = self.entries.read().ok()?;
+        let entries = match self.entries.read() {
+            Ok(e) => e,
+            Err(_) => {
+                tracing::error!("Cache read lock poisoned; returning cache miss");
+                return None;
+            }
+        };
         let entry = match entries.get(&key) {
             Some(e) => e,
             None => {
@@ -62,10 +68,17 @@ impl CapsuleCache {
             crate::metrics::record_cache_hit();
             Some(entry.result.clone())
         } else {
-            // Entry expired — drop read lock and evict via write lock
+            // Entry expired — drop read lock and evict all expired entries via write lock
             drop(entries);
-            if let Ok(mut entries) = self.entries.write() {
-                entries.retain(|_, v| v.created_at.elapsed().as_secs() < self.ttl_secs);
+            match self.entries.write() {
+                Ok(mut entries) => {
+                    entries.retain(|_, v| v.created_at.elapsed().as_secs() < self.ttl_secs);
+                }
+                Err(_) => {
+                    tracing::error!(
+                        "Cache write lock poisoned during eviction; expired entries not evicted"
+                    );
+                }
             }
             crate::metrics::record_cache_miss();
             None
@@ -84,7 +97,10 @@ impl CapsuleCache {
         let key = Self::make_key(query, token_budget, intent, index_generation);
         let mut entries = match self.entries.write() {
             Ok(e) => e,
-            Err(_) => return,
+            Err(_) => {
+                tracing::error!("Cache write lock poisoned in put; result not cached");
+                return;
+            }
         };
 
         // Evict expired entries first

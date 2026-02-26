@@ -69,7 +69,9 @@ struct MergedRange {
 /// Greedy budget allocation with node-level granularity.
 ///
 /// Budget split is controlled by `BexpConfig` fields:
-/// `pivot_budget_pct` pivots, `bridge_budget_pct` bridges, remainder skeletons.
+/// `overhead_reserve_pct` is reserved first, then the usable remainder is split
+/// into `pivot_budget_pct` for pivots, `bridge_budget_pct` for bridges,
+/// and the remainder for skeletons.
 pub fn allocate(
     conn: &Connection,
     skeletonizer: &Skeletonizer,
@@ -87,7 +89,7 @@ pub fn allocate(
     };
 
     // Reserve overhead budget and split remainder using integer arithmetic
-    // to avoid floating-point precision issues.
+    // for deterministic rounding.
     let usable_budget = budget * (100 - config.overhead_reserve_pct) / 100;
     let pivot_budget = usable_budget * config.pivot_budget_pct / 100;
     let bridge_budget = usable_budget * config.bridge_budget_pct / 100;

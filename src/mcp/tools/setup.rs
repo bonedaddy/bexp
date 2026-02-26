@@ -121,7 +121,7 @@ fn generate_config(project_type: &ProjectType) -> String {
     config.push_str("default_skeleton_level = \"standard\"\n");
     config.push_str("max_file_size = 1000000\n");
     config.push_str("watcher_debounce_ms = 500\n");
-    config.push_str("memory_budget_pct = 0.10\n");
+    config.push_str("memory_budget_pct = 10\n");
     config.push_str("session_compress_after_hours = 2\n");
     config.push_str("observation_ttl_days = 90\n");
     config.push_str("db_path = \".bexp/index.db\"\n\n");

@@ -81,18 +81,21 @@ impl Skeletonizer {
         let skeleton = SkeletonTransformer::transform(&source, lang, level)?;
 
         // Cache it — use writer for both lookup and update to avoid TOCTOU
-        // where the file could be deleted between reader lookup and writer update.
+        // where the file row could be deleted by another writer between lookup and update.
         {
             let conn = self.db.writer();
             if let Ok(Some(file)) = queries::get_file_by_path(&conn, &rel_path) {
                 let tokens = self.token_counter.count(&skeleton) as i64;
-                let _ = queries::update_file_skeleton(
-                    &conn,
-                    file.id,
-                    level.as_str(),
-                    &skeleton,
-                    tokens,
-                );
+                if let Err(e) =
+                    queries::update_file_skeleton(&conn, file.id, level.as_str(), &skeleton, tokens)
+                {
+                    tracing::error!(
+                        file_id = file.id,
+                        path = %rel_path,
+                        error = %e,
+                        "Failed to cache skeleton; will regenerate on next request"
+                    );
+                }
             }
         }
 

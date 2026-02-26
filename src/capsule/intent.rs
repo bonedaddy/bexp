@@ -66,20 +66,16 @@ pub fn detect_intent(query: &str) -> Intent {
         .filter(|kw| lower.contains(*kw))
         .count();
 
-    if debug_score > blast_score && debug_score > modify_score {
-        Intent::Debug
-    } else if blast_score > debug_score && blast_score > modify_score {
-        Intent::BlastRadius
-    } else if modify_score > debug_score && modify_score > blast_score {
+    // Tie-break priority: Modify > Debug > BlastRadius > Explore
+    let max_score = debug_score.max(blast_score).max(modify_score);
+    if max_score == 0 {
+        Intent::Explore
+    } else if modify_score == max_score {
         Intent::Modify
-    } else if modify_score > 0 && modify_score >= blast_score && modify_score >= debug_score {
-        // Tie-break in favor of Modify when scores are equal
-        Intent::Modify
-    } else if debug_score > 0 {
-        // At least one keyword matched, but tied — prefer Debug over BlastRadius
+    } else if debug_score == max_score {
         Intent::Debug
     } else {
-        Intent::Explore
+        Intent::BlastRadius
     }
 }
 

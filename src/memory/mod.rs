@@ -184,17 +184,17 @@ impl MemoryService {
     }
 }
 
-fn truncate_to_char_boundary(s: &str, max_byte_pos: usize) -> &str {
-    if s.len() <= max_byte_pos {
-        return s;
+/// Find the largest byte index <= `index` that is a char boundary.
+/// Equivalent to `str::floor_char_boundary` (stable in Rust 1.91+).
+fn floor_char_boundary(s: &str, index: usize) -> usize {
+    if index >= s.len() {
+        return s.len();
     }
-    match s.char_indices()
-        .take_while(|(i, _)| *i <= max_byte_pos)
-        .last()
-    {
-        Some((i, c)) => &s[..i + c.len_utf8()],
-        None => "",
+    let mut i = index;
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
     }
+    i
 }
 
 fn generate_headline(content: &str) -> String {
@@ -202,8 +202,8 @@ fn generate_headline(content: &str) -> String {
     if first_line.len() <= 80 {
         first_line.to_string()
     } else {
-        let truncated = truncate_to_char_boundary(first_line, 77);
-        format!("{truncated}...")
+        let end = floor_char_boundary(first_line, 77);
+        format!("{}...", &first_line[..end])
     }
 }
 
@@ -211,8 +211,8 @@ fn generate_summary(content: &str) -> String {
     if content.len() <= 200 {
         content.to_string()
     } else {
-        let truncated = truncate_to_char_boundary(content, 197);
-        format!("{truncated}...")
+        let end = floor_char_boundary(content, 197);
+        format!("{}...", &content[..end])
     }
 }
 
@@ -415,9 +415,7 @@ fn extract_symbol_candidates(content: &str) -> Vec<String> {
                 .chars()
                 .all(|c| c.is_alphanumeric() || c == '_' || c == ':');
 
-        if (is_pascal || is_snake_or_qualified)
-            && !common.contains(cleaned)
-            && seen.insert(cleaned)
+        if (is_pascal || is_snake_or_qualified) && !common.contains(cleaned) && seen.insert(cleaned)
         {
             candidates.push(cleaned.to_string());
         }

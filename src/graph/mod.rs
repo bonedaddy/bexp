@@ -60,12 +60,12 @@ impl GraphEngine {
         let mut graph_lock = self.graph.write().map_err(|_| BexpError::LockPoisoned {
             component: "graph".into(),
         })?;
-        let mut id_map_lock =
-            self.id_to_index
-                .write()
-                .map_err(|_| BexpError::LockPoisoned {
-                    component: "id_to_index".into(),
-                })?;
+        let mut id_map_lock = self
+            .id_to_index
+            .write()
+            .map_err(|_| BexpError::LockPoisoned {
+                component: "id_to_index".into(),
+            })?;
         let mut pr_lock = self.pagerank.write().map_err(|_| BexpError::LockPoisoned {
             component: "pagerank".into(),
         })?;
@@ -77,10 +77,6 @@ impl GraphEngine {
         *id_map_lock = id_map;
         *pr_lock = pagerank;
 
-        drop(pr_lock);
-        drop(id_map_lock);
-        drop(graph_lock);
-
         crate::metrics::set_graph_stats(node_count, edge_count);
 
         Ok(())
@@ -90,40 +86,49 @@ impl GraphEngine {
         self.build_from_db(conn)
     }
 
-    pub fn node_count(&self) -> usize {
+    fn read_graph(&self) -> Option<std::sync::RwLockReadGuard<'_, DiGraph<GraphNode, GraphEdge>>> {
         self.graph
             .read()
-            .map(|g| g.node_count())
-            .unwrap_or_else(|_| {
-                tracing::warn!("Graph lock poisoned in node_count");
-                0
+            .map_err(|_| {
+                tracing::error!("graph RwLock poisoned");
             })
+            .ok()
+    }
+
+    fn read_id_map(&self) -> Option<std::sync::RwLockReadGuard<'_, HashMap<i64, NodeIndex>>> {
+        self.id_to_index
+            .read()
+            .map_err(|_| {
+                tracing::error!("id_to_index RwLock poisoned");
+            })
+            .ok()
+    }
+
+    fn read_pagerank(&self) -> Option<std::sync::RwLockReadGuard<'_, HashMap<NodeIndex, f64>>> {
+        self.pagerank
+            .read()
+            .map_err(|_| {
+                tracing::error!("pagerank RwLock poisoned");
+            })
+            .ok()
+    }
+
+    pub fn node_count(&self) -> usize {
+        let Some(g) = self.read_graph() else { return 0 };
+        g.node_count()
     }
 
     pub fn edge_count(&self) -> usize {
-        self.graph
-            .read()
-            .map(|g| g.edge_count())
-            .unwrap_or_else(|_| {
-                tracing::warn!("Graph lock poisoned in edge_count");
-                0
-            })
+        let Some(g) = self.read_graph() else { return 0 };
+        g.edge_count()
     }
 
     pub fn get_pagerank(&self, db_id: i64) -> f64 {
-        let id_map = match self.id_to_index.read() {
-            Ok(m) => m,
-            Err(_) => {
-                tracing::warn!("id_to_index lock poisoned in get_pagerank");
-                return 0.0;
-            }
+        let Some(id_map) = self.read_id_map() else {
+            return 0.0;
         };
-        let pr = match self.pagerank.read() {
-            Ok(p) => p,
-            Err(_) => {
-                tracing::warn!("pagerank lock poisoned in get_pagerank");
-                return 0.0;
-            }
+        let Some(pr) = self.read_pagerank() else {
+            return 0.0;
         };
         id_map
             .get(&db_id)
@@ -216,10 +221,7 @@ impl GraphEngine {
     }
 
     pub fn find_node_index_by_name(&self, name: &str) -> Option<i64> {
-        let graph = self.graph.read().ok().or_else(|| {
-            tracing::warn!("Graph lock poisoned in find_node_index_by_name");
-            None
-        })?;
+        let graph = self.read_graph()?;
         graph
             .node_indices()
             .find(|&idx| {
@@ -234,19 +236,11 @@ impl GraphEngine {
         n: usize,
         kind_filter: Option<&str>,
     ) -> Vec<(String, String, f64)> {
-        let graph = match self.graph.read() {
-            Ok(g) => g,
-            Err(_) => {
-                tracing::warn!("Graph lock poisoned in get_top_pagerank");
-                return Vec::new();
-            }
+        let Some(graph) = self.read_graph() else {
+            return Vec::new();
         };
-        let pr = match self.pagerank.read() {
-            Ok(p) => p,
-            Err(_) => {
-                tracing::warn!("Pagerank lock poisoned in get_top_pagerank");
-                return Vec::new();
-            }
+        let Some(pr) = self.read_pagerank() else {
+            return Vec::new();
         };
 
         let mut entries: Vec<(String, String, f64)> = pr
@@ -274,12 +268,8 @@ impl GraphEngine {
     }
 
     pub fn get_edge_kind_counts(&self) -> Vec<(String, usize)> {
-        let graph = match self.graph.read() {
-            Ok(g) => g,
-            Err(_) => {
-                tracing::warn!("Graph lock poisoned in get_edge_kind_counts");
-                return Vec::new();
-            }
+        let Some(graph) = self.read_graph() else {
+            return Vec::new();
         };
         let mut counts: HashMap<String, usize> = HashMap::new();
         for edge in graph.edge_weights() {
@@ -297,19 +287,11 @@ impl GraphEngine {
         pivot_node_ids: &HashSet<i64>,
         included_node_ids: &HashSet<i64>,
     ) -> Vec<i64> {
-        let graph = match self.graph.read() {
-            Ok(g) => g,
-            Err(_) => {
-                tracing::warn!("Graph lock poisoned in get_bridge_candidates");
-                return Vec::new();
-            }
+        let Some(graph) = self.read_graph() else {
+            return Vec::new();
         };
-        let id_map = match self.id_to_index.read() {
-            Ok(m) => m,
-            Err(_) => {
-                tracing::warn!("id_to_index lock poisoned in get_bridge_candidates");
-                return Vec::new();
-            }
+        let Some(id_map) = self.read_id_map() else {
+            return Vec::new();
         };
 
         let bridge_edge_kinds = ["calls", "imports", "implements", "extends"];
@@ -448,10 +430,6 @@ impl GraphEngine {
             component: "pagerank".into(),
         })?;
         *pr_lock = pagerank;
-
-        drop(pr_lock);
-        drop(graph);
-        drop(id_map);
 
         tracing::info!(
             removed = indices_to_remove.len(),
