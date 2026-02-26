@@ -23,9 +23,9 @@ pub struct GraphNode {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct GraphEdge {
     pub kind: EdgeKind,
+    #[allow(dead_code)]
     pub confidence: f64,
 }
 
@@ -53,22 +53,31 @@ impl GraphEngine {
     pub fn build_from_db(&self, conn: &Connection) -> Result<()> {
         let (graph, id_map) = builder::build_graph(conn)?;
 
-        let pagerank = centrality::compute_pagerank(&graph, 0.85, 20, 1e-6);
+        let pagerank = centrality::compute_pagerank(&graph, 0.85, 100, 1e-6);
 
-        *self.graph.write().map_err(|_| BexpError::LockPoisoned {
+        // Acquire all write locks before updating to prevent readers from seeing
+        // partially-updated state (e.g. new graph with old id_to_index).
+        let mut graph_lock = self.graph.write().map_err(|_| BexpError::LockPoisoned {
             component: "graph".into(),
-        })? = graph;
-        *self
+        })?;
+        let mut id_map_lock = self
             .id_to_index
             .write()
             .map_err(|_| BexpError::LockPoisoned {
-                component: "graph".into(),
-            })? = id_map;
-        *self.pagerank.write().map_err(|_| BexpError::LockPoisoned {
-            component: "graph".into(),
-        })? = pagerank;
+                component: "id_to_index".into(),
+            })?;
+        let mut pr_lock = self.pagerank.write().map_err(|_| BexpError::LockPoisoned {
+            component: "pagerank".into(),
+        })?;
 
-        crate::metrics::set_graph_stats(self.node_count(), self.edge_count());
+        let node_count = graph.node_count();
+        let edge_count = graph.edge_count();
+
+        *graph_lock = graph;
+        *id_map_lock = id_map;
+        *pr_lock = pagerank;
+
+        crate::metrics::set_graph_stats(node_count, edge_count);
 
         Ok(())
     }
@@ -77,22 +86,49 @@ impl GraphEngine {
         self.build_from_db(conn)
     }
 
+    fn read_graph(&self) -> Option<std::sync::RwLockReadGuard<'_, DiGraph<GraphNode, GraphEdge>>> {
+        self.graph
+            .read()
+            .map_err(|_| {
+                tracing::error!("graph RwLock poisoned");
+            })
+            .ok()
+    }
+
+    fn read_id_map(&self) -> Option<std::sync::RwLockReadGuard<'_, HashMap<i64, NodeIndex>>> {
+        self.id_to_index
+            .read()
+            .map_err(|_| {
+                tracing::error!("id_to_index RwLock poisoned");
+            })
+            .ok()
+    }
+
+    fn read_pagerank(&self) -> Option<std::sync::RwLockReadGuard<'_, HashMap<NodeIndex, f64>>> {
+        self.pagerank
+            .read()
+            .map_err(|_| {
+                tracing::error!("pagerank RwLock poisoned");
+            })
+            .ok()
+    }
+
     pub fn node_count(&self) -> usize {
-        self.graph.read().map(|g| g.node_count()).unwrap_or(0)
+        let Some(g) = self.read_graph() else { return 0 };
+        g.node_count()
     }
 
     pub fn edge_count(&self) -> usize {
-        self.graph.read().map(|g| g.edge_count()).unwrap_or(0)
+        let Some(g) = self.read_graph() else { return 0 };
+        g.edge_count()
     }
 
     pub fn get_pagerank(&self, db_id: i64) -> f64 {
-        let id_map = match self.id_to_index.read() {
-            Ok(m) => m,
-            Err(_) => return 0.0,
+        let Some(id_map) = self.read_id_map() else {
+            return 0.0;
         };
-        let pr = match self.pagerank.read() {
-            Ok(p) => p,
-            Err(_) => return 0.0,
+        let Some(pr) = self.read_pagerank() else {
+            return 0.0;
         };
         id_map
             .get(&db_id)
@@ -185,7 +221,7 @@ impl GraphEngine {
     }
 
     pub fn find_node_index_by_name(&self, name: &str) -> Option<i64> {
-        let graph = self.graph.read().ok()?;
+        let graph = self.read_graph()?;
         graph
             .node_indices()
             .find(|&idx| {
@@ -200,13 +236,11 @@ impl GraphEngine {
         n: usize,
         kind_filter: Option<&str>,
     ) -> Vec<(String, String, f64)> {
-        let graph = match self.graph.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
+        let Some(graph) = self.read_graph() else {
+            return Vec::new();
         };
-        let pr = match self.pagerank.read() {
-            Ok(p) => p,
-            Err(_) => return Vec::new(),
+        let Some(pr) = self.read_pagerank() else {
+            return Vec::new();
         };
 
         let mut entries: Vec<(String, String, f64)> = pr
@@ -234,9 +268,8 @@ impl GraphEngine {
     }
 
     pub fn get_edge_kind_counts(&self) -> Vec<(String, usize)> {
-        let graph = match self.graph.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
+        let Some(graph) = self.read_graph() else {
+            return Vec::new();
         };
         let mut counts: HashMap<String, usize> = HashMap::new();
         for edge in graph.edge_weights() {
@@ -254,13 +287,11 @@ impl GraphEngine {
         pivot_node_ids: &HashSet<i64>,
         included_node_ids: &HashSet<i64>,
     ) -> Vec<i64> {
-        let graph = match self.graph.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
+        let Some(graph) = self.read_graph() else {
+            return Vec::new();
         };
-        let id_map = match self.id_to_index.read() {
-            Ok(m) => m,
-            Err(_) => return Vec::new(),
+        let Some(id_map) = self.read_id_map() else {
+            return Vec::new();
         };
 
         let bridge_edge_kinds = ["calls", "imports", "implements", "extends"];
@@ -392,18 +423,13 @@ impl GraphEngine {
             }
         }
 
-        drop(graph);
-        drop(id_map);
-
-        // Recompute PageRank (global property, must be full)
-        let graph_ref = self.graph.read().map_err(|_| BexpError::LockPoisoned {
-            component: "graph".into(),
+        // Recompute PageRank while still holding graph/id_map write locks
+        // to prevent readers from seeing updated graph with stale pagerank.
+        let pagerank = centrality::compute_pagerank(&graph, 0.85, 100, 1e-6);
+        let mut pr_lock = self.pagerank.write().map_err(|_| BexpError::LockPoisoned {
+            component: "pagerank".into(),
         })?;
-        let pagerank = centrality::compute_pagerank(&graph_ref, 0.85, 20, 1e-6);
-        drop(graph_ref);
-        *self.pagerank.write().map_err(|_| BexpError::LockPoisoned {
-            component: "graph".into(),
-        })? = pagerank;
+        *pr_lock = pagerank;
 
         tracing::info!(
             removed = indices_to_remove.len(),

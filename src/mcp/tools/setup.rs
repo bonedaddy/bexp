@@ -16,7 +16,10 @@ pub async fn handle(server: &BexpServer, params: SetupParams) -> Result<CallTool
     // Detect project type
     let project_type = detect_project_type(&server.workspace_root);
 
-    let config_content = generate_config(&project_type);
+    // Auto-discover git submodules for workspace_group
+    let submodules = crate::git::discover_submodules(&server.workspace_root);
+
+    let config_content = generate_config(&project_type, &submodules);
 
     std::fs::create_dir_all(&bexp_dir).map_err(super::to_error_data)?;
 
@@ -110,7 +113,7 @@ fn detect_project_type(root: &std::path::Path) -> ProjectType {
     }
 }
 
-fn generate_config(project_type: &ProjectType) -> String {
+fn generate_config(project_type: &ProjectType, submodules: &[std::path::PathBuf]) -> String {
     let mut config = String::new();
     config.push_str("# bexp Configuration\n");
     config.push_str(&format!(
@@ -121,7 +124,7 @@ fn generate_config(project_type: &ProjectType) -> String {
     config.push_str("default_skeleton_level = \"standard\"\n");
     config.push_str("max_file_size = 1000000\n");
     config.push_str("watcher_debounce_ms = 500\n");
-    config.push_str("memory_budget_pct = 0.10\n");
+    config.push_str("memory_budget_pct = 10\n");
     config.push_str("session_compress_after_hours = 2\n");
     config.push_str("observation_ttl_days = 90\n");
     config.push_str("db_path = \".bexp/index.db\"\n\n");
@@ -158,7 +161,21 @@ fn generate_config(project_type: &ProjectType) -> String {
         }
         config.push('\n');
     }
-    config.push_str("]\n");
+    config.push_str("]\n\n");
+
+    if submodules.is_empty() {
+        config.push_str("workspace_group = []\n");
+    } else {
+        config.push_str("workspace_group = [\n");
+        for (i, sub) in submodules.iter().enumerate() {
+            config.push_str(&format!("    \"{}\"", sub.display()));
+            if i < submodules.len() - 1 {
+                config.push(',');
+            }
+            config.push('\n');
+        }
+        config.push_str("]\n");
+    }
 
     config
 }

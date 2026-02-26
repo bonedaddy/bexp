@@ -25,7 +25,10 @@ impl<'a> Scanner<'a> {
         {
             let entry = match entry {
                 Ok(e) => e,
-                Err(_) => continue,
+                Err(e) => {
+                    tracing::warn!(error = %e, "Skipping entry during scan");
+                    continue;
+                }
             };
 
             if !entry.file_type().is_file() {
@@ -58,7 +61,16 @@ impl<'a> Scanner<'a> {
     }
 
     fn is_excluded(&self, path: &Path, root: &Path) -> bool {
-        let rel = path.strip_prefix(root).unwrap_or(path);
-        self.config.is_excluded(rel)
+        match path.strip_prefix(root) {
+            Ok(rel) => self.config.is_excluded(rel),
+            Err(_) => {
+                tracing::error!(
+                    path = %path.display(),
+                    root = %root.display(),
+                    "Cannot compute relative path; including file to avoid silent exclusion"
+                );
+                false
+            }
+        }
     }
 }

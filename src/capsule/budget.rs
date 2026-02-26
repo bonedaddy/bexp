@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::Connection;
 
+use crate::config::BexpConfig;
 use crate::db::queries;
 use crate::error::Result;
 use crate::graph::GraphEngine;
@@ -23,8 +24,8 @@ pub struct BudgetAllocation {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct PivotExcerpt {
+    #[allow(dead_code)]
     pub file_id: i64,
     pub path: String,
     pub content: String,
@@ -37,18 +38,19 @@ pub struct PivotExcerpt {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct BridgeExcerpt {
+    #[allow(dead_code)]
     pub file_id: i64,
     pub path: String,
     pub signature: String,
+    #[allow(dead_code)]
     pub tokens: usize,
     pub node_name: String,
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct SkeletonFile {
+    #[allow(dead_code)]
     pub file_id: i64,
     pub path: String,
     pub skeleton: String,
@@ -64,12 +66,12 @@ struct MergedRange {
     node_names: Vec<String>,
 }
 
-/// Context lines to pad around each node range.
-const CONTEXT_PADDING: usize = 5;
-
 /// Greedy budget allocation with node-level granularity.
 ///
-/// Budget split: 60% pivots, 10% bridges, 30% skeletons.
+/// Budget split is controlled by `BexpConfig` fields:
+/// `overhead_reserve_pct` is reserved first, then the usable remainder is split
+/// into `pivot_budget_pct` for pivots, `bridge_budget_pct` for bridges,
+/// and the remainder for skeletons.
 pub fn allocate(
     conn: &Connection,
     skeletonizer: &Skeletonizer,
@@ -77,6 +79,7 @@ pub fn allocate(
     budget: usize,
     _default_level: DetailLevel,
     graph: Option<&GraphEngine>,
+    config: &BexpConfig,
 ) -> Result<BudgetAllocation> {
     let mut allocation = BudgetAllocation {
         pivots: Vec::new(),
@@ -85,10 +88,11 @@ pub fn allocate(
         total_tokens: 0,
     };
 
-    // Reserve 10% of budget for overhead (headers, formatting)
-    let usable_budget = (budget as f64 * 0.9) as usize;
-    let pivot_budget = (usable_budget as f64 * 0.6) as usize;
-    let bridge_budget = (usable_budget as f64 * 0.1) as usize;
+    // Reserve overhead budget and split remainder using integer arithmetic
+    // for deterministic rounding.
+    let usable_budget = budget * (100 - config.overhead_reserve_pct) / 100;
+    let pivot_budget = usable_budget * config.pivot_budget_pct / 100;
+    let bridge_budget = usable_budget * config.bridge_budget_pct / 100;
     let skeleton_budget = usable_budget - pivot_budget - bridge_budget;
 
     let mut pivot_remaining = pivot_budget;
@@ -142,8 +146,8 @@ pub fn allocate(
     let mut included_node_ids: HashSet<i64> = HashSet::new();
 
     // Build excerpts for top files
-    for &file_id in file_order.iter().take(10) {
-        if pivot_remaining < 50 {
+    for &file_id in file_order.iter().take(config.max_pivot_files) {
+        if pivot_remaining < config.min_pivot_budget {
             break;
         }
         if !seen_files.insert(file_id) {
@@ -198,7 +202,7 @@ pub fn allocate(
                 .iter()
                 .map(|r| (r.line_start as usize, r.line_end as usize, r.name.clone()))
                 .collect();
-            let merged = merge_ranges(&raw_ranges, total_lines);
+            let merged = merge_ranges(&raw_ranges, total_lines, config.context_padding);
 
             for mr in merged {
                 let excerpt = extract_lines(&content, mr.line_start, mr.line_end);
@@ -243,7 +247,7 @@ pub fn allocate(
         let bridge_ranges = queries::get_node_ranges_by_ids(conn, &bridge_candidates)?;
 
         for nr in &bridge_ranges {
-            if bridge_remaining < 20 {
+            if bridge_remaining < config.min_bridge_budget {
                 break;
             }
             let sig = nr.signature.as_deref().unwrap_or(&nr.name);
@@ -283,7 +287,7 @@ pub fn allocate(
     }
 
     for (file_id, score) in skeleton_files {
-        if skeleton_remaining < 50 {
+        if skeleton_remaining < config.min_skeleton_budget {
             break;
         }
 
@@ -368,7 +372,11 @@ pub fn allocate(
 }
 
 /// Merge overlapping/adjacent ranges after adding context padding.
-fn merge_ranges(ranges: &[(usize, usize, String)], total_lines: usize) -> Vec<MergedRange> {
+fn merge_ranges(
+    ranges: &[(usize, usize, String)],
+    total_lines: usize,
+    context_padding: usize,
+) -> Vec<MergedRange> {
     if ranges.is_empty() {
         return Vec::new();
     }
@@ -376,8 +384,8 @@ fn merge_ranges(ranges: &[(usize, usize, String)], total_lines: usize) -> Vec<Me
     let mut padded: Vec<(usize, usize, String)> = ranges
         .iter()
         .map(|(start, end, name)| {
-            let padded_start = start.saturating_sub(CONTEXT_PADDING).max(1);
-            let padded_end = (*end + CONTEXT_PADDING).min(total_lines);
+            let padded_start = start.saturating_sub(context_padding).max(1);
+            let padded_end = (*end + context_padding).min(total_lines);
             (padded_start, padded_end, name.clone())
         })
         .collect();
@@ -435,7 +443,7 @@ mod tests {
             (18, 30, "b".to_string()),
             (50, 60, "c".to_string()),
         ];
-        let merged = merge_ranges(&ranges, 100);
+        let merged = merge_ranges(&ranges, 100, 5);
         assert_eq!(merged.len(), 2);
         // First range: padded 5..35 merged
         assert!(merged[0].line_end >= 30);
@@ -447,7 +455,7 @@ mod tests {
     #[test]
     fn merge_ranges_handles_single() {
         let ranges = vec![(10, 20, "func".to_string())];
-        let merged = merge_ranges(&ranges, 100);
+        let merged = merge_ranges(&ranges, 100, 5);
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].line_start, 5); // 10 - 5
         assert_eq!(merged[0].line_end, 25); // 20 + 5

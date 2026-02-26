@@ -14,23 +14,11 @@ pub enum BexpError {
     #[error("Parse error: {reason} in {file}")]
     Parse { file: String, reason: String },
 
-    #[error("Index error: {0}")]
-    #[allow(dead_code)]
-    Index(String),
-
     #[error("Graph error: {0}")]
     Graph(String),
 
     #[error("Skeleton error: {0}")]
     Skeleton(String),
-
-    #[error("Capsule error: {0}")]
-    #[allow(dead_code)]
-    Capsule(String),
-
-    #[error("Memory error: {0}")]
-    #[allow(dead_code)]
-    Memory(String),
 
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
@@ -43,10 +31,6 @@ pub enum BexpError {
 
     #[error("Not found: {0}")]
     NotFound(String),
-
-    #[error("Token budget exceeded: requested {requested}, max {max}")]
-    #[allow(dead_code)]
-    BudgetExceeded { requested: usize, max: usize },
 
     #[error("File too large: {path} is {size} bytes (max {max})")]
     FileTooLarge { path: String, size: u64, max: u64 },

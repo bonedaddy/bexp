@@ -42,6 +42,7 @@ pub fn compute_pagerank(
         .filter(|idx| out_degrees[idx] == 0.0)
         .collect();
 
+    let mut converged = false;
     for iteration in 0..max_iterations {
         let mut new_scores: HashMap<NodeIndex, f64> = HashMap::with_capacity(n);
         let mut max_diff = 0.0_f64;
@@ -72,8 +73,17 @@ pub fn compute_pagerank(
 
         if max_diff < tolerance {
             tracing::debug!("PageRank converged after {} iterations", iteration + 1);
+            converged = true;
             break;
         }
+    }
+
+    if !converged {
+        tracing::warn!(
+            max_iterations = max_iterations,
+            nodes = n,
+            "PageRank did not converge within max iterations"
+        );
     }
 
     scores

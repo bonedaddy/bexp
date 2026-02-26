@@ -32,8 +32,9 @@ pub struct BexpConfig {
     #[serde(default = "default_watcher_debounce_ms")]
     pub watcher_debounce_ms: u64,
 
+    /// Percentage of token budget reserved for memory/observation context (0..100).
     #[serde(default = "default_memory_budget_pct")]
-    pub memory_budget_pct: f64,
+    pub memory_budget_pct: usize,
 
     #[serde(default = "default_session_compress_after_hours")]
     pub session_compress_after_hours: u64,
@@ -64,6 +65,38 @@ pub struct BexpConfig {
 
     #[serde(default = "default_shutdown_drain_secs")]
     pub shutdown_drain_secs: u64,
+
+    /// Context lines to pad around each node range in capsule excerpts.
+    #[serde(default = "default_context_padding")]
+    pub context_padding: usize,
+
+    /// Maximum number of top files to consider for pivot excerpts.
+    #[serde(default = "default_max_pivot_files")]
+    pub max_pivot_files: usize,
+
+    /// Minimum remaining budget (in tokens) to continue allocating pivots.
+    #[serde(default = "default_min_pivot_budget")]
+    pub min_pivot_budget: usize,
+
+    /// Minimum remaining budget (in tokens) to continue allocating bridges.
+    #[serde(default = "default_min_bridge_budget")]
+    pub min_bridge_budget: usize,
+
+    /// Minimum remaining budget (in tokens) to continue allocating skeletons.
+    #[serde(default = "default_min_skeleton_budget")]
+    pub min_skeleton_budget: usize,
+
+    /// Percentage of total token budget reserved for overhead (headers, formatting).
+    #[serde(default = "default_overhead_reserve_pct")]
+    pub overhead_reserve_pct: usize,
+
+    /// Percentage of usable budget allocated to pivot excerpts.
+    #[serde(default = "default_pivot_budget_pct")]
+    pub pivot_budget_pct: usize,
+
+    /// Percentage of usable budget allocated to bridge context.
+    #[serde(default = "default_bridge_budget_pct")]
+    pub bridge_budget_pct: usize,
 }
 
 fn default_token_budget() -> usize {
@@ -81,8 +114,8 @@ fn default_max_file_size() -> usize {
 fn default_watcher_debounce_ms() -> u64 {
     500
 }
-fn default_memory_budget_pct() -> f64 {
-    0.10
+fn default_memory_budget_pct() -> usize {
+    10
 }
 fn default_session_compress_after_hours() -> u64 {
     2
@@ -101,6 +134,30 @@ fn default_capsule_cache_ttl_secs() -> u64 {
 }
 fn default_shutdown_drain_secs() -> u64 {
     5
+}
+fn default_context_padding() -> usize {
+    5
+}
+fn default_max_pivot_files() -> usize {
+    10
+}
+fn default_min_pivot_budget() -> usize {
+    50
+}
+fn default_min_bridge_budget() -> usize {
+    20
+}
+fn default_min_skeleton_budget() -> usize {
+    50
+}
+fn default_overhead_reserve_pct() -> usize {
+    10
+}
+fn default_pivot_budget_pct() -> usize {
+    60
+}
+fn default_bridge_budget_pct() -> usize {
+    10
 }
 
 impl Default for BexpConfig {
@@ -123,6 +180,14 @@ impl Default for BexpConfig {
             capsule_cache_ttl_secs: default_capsule_cache_ttl_secs(),
             health_port: None,
             shutdown_drain_secs: default_shutdown_drain_secs(),
+            context_padding: default_context_padding(),
+            max_pivot_files: default_max_pivot_files(),
+            min_pivot_budget: default_min_pivot_budget(),
+            min_bridge_budget: default_min_bridge_budget(),
+            min_skeleton_budget: default_min_skeleton_budget(),
+            overhead_reserve_pct: default_overhead_reserve_pct(),
+            pivot_budget_pct: default_pivot_budget_pct(),
+            bridge_budget_pct: default_bridge_budget_pct(),
         }
     }
 }
@@ -147,14 +212,38 @@ fn default_excludes() -> Vec<String> {
 impl BexpConfig {
     pub fn load(workspace_root: &Path) -> Result<Self> {
         let config_path = workspace_root.join(".bexp/config.toml");
-        if config_path.exists() {
+        let config = if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)
                 .map_err(|e| BexpError::Config(format!("Failed to read config: {e}")))?;
             let config: Self = toml::from_str(&content)?;
-            Ok(config)
+            config
         } else {
-            Ok(Self::default())
+            Self::default()
+        };
+        config.validate()?;
+        Ok(config)
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.overhead_reserve_pct >= 100 {
+            return Err(BexpError::Config(format!(
+                "overhead_reserve_pct must be < 100, got {}",
+                self.overhead_reserve_pct
+            )));
         }
+        if self.pivot_budget_pct + self.bridge_budget_pct > 100 {
+            return Err(BexpError::Config(format!(
+                "pivot_budget_pct ({}) + bridge_budget_pct ({}) must be <= 100",
+                self.pivot_budget_pct, self.bridge_budget_pct
+            )));
+        }
+        if self.memory_budget_pct >= 100 {
+            return Err(BexpError::Config(format!(
+                "memory_budget_pct must be < 100, got {}",
+                self.memory_budget_pct
+            )));
+        }
+        Ok(())
     }
 
     pub fn db_path(&self, workspace_root: &Path) -> PathBuf {
@@ -234,7 +323,7 @@ exclude_patterns = ["generated", "cache"]
 db_path = "data/custom.db"
 max_file_size = 42
 watcher_debounce_ms = 999
-memory_budget_pct = 0.25
+memory_budget_pct = 25
 session_compress_after_hours = 7
 observation_ttl_days = 30
 "#,
@@ -252,7 +341,7 @@ observation_ttl_days = 30
         assert_eq!(config.db_path, "data/custom.db");
         assert_eq!(config.max_file_size, 42);
         assert_eq!(config.watcher_debounce_ms, 999);
-        assert!((config.memory_budget_pct - 0.25).abs() < f64::EPSILON);
+        assert_eq!(config.memory_budget_pct, 25);
         assert_eq!(config.session_compress_after_hours, 7);
         assert_eq!(config.observation_ttl_days, 30);
     }

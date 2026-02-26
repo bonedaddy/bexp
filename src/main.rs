@@ -115,7 +115,25 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn index_workspace(workspace_root: &std::path::Path) -> anyhow::Result<()> {
-    let config = Arc::new(BexpConfig::load(workspace_root)?);
+    // Auto-discover and index git submodules that haven't been initialized yet
+    let submodules = git::discover_submodules(workspace_root);
+    for sub_path in &submodules {
+        if !sub_path.join(".bexp/index.db").exists() {
+            tracing::info!(submodule = %sub_path.display(), "Auto-indexing submodule");
+            if let Err(e) = index_workspace(sub_path) {
+                tracing::warn!(submodule = %sub_path.display(), error = %e, "Failed to index submodule");
+            }
+        }
+    }
+
+    let mut config = BexpConfig::load(workspace_root)?;
+    for sub_path in &submodules {
+        let sub_str = sub_path.to_string_lossy().to_string();
+        if !config.workspace_group.contains(&sub_str) {
+            config.workspace_group.push(sub_str);
+        }
+    }
+    let config = Arc::new(config);
     let db = Arc::new(Database::open(&config.db_path(workspace_root))?);
     let indexer = IndexerService::new(db.clone(), config.clone(), workspace_root.to_path_buf());
 
@@ -135,6 +153,23 @@ async fn serve(workspace_root: PathBuf, health_port_override: Option<u16>) -> an
     // CLI --health-port overrides config file
     if health_port_override.is_some() {
         config.health_port = health_port_override;
+    }
+    // Auto-discover git submodules, index any that haven't been initialized yet,
+    // and add them all to workspace_group for cross-workspace resolution.
+    let submodules = git::discover_submodules(&workspace_root);
+    for sub_path in &submodules {
+        if !sub_path.join(".bexp/index.db").exists() {
+            tracing::info!(submodule = %sub_path.display(), "Auto-indexing submodule");
+            if let Err(e) = index_workspace(sub_path) {
+                tracing::warn!(submodule = %sub_path.display(), error = %e, "Failed to index submodule");
+            }
+        }
+    }
+    for sub_path in &submodules {
+        let sub_str = sub_path.to_string_lossy().to_string();
+        if !config.workspace_group.contains(&sub_str) {
+            config.workspace_group.push(sub_str);
+        }
     }
     let config = Arc::new(config);
 

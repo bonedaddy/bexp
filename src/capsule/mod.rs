@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::config::BexpConfig;
 use crate::db::{queries, Database};
-use crate::error::Result;
+use crate::error::{BexpError, Result};
 use crate::graph::GraphEngine;
 use crate::memory::MemoryService;
 use crate::skeleton::Skeletonizer;
@@ -62,7 +62,11 @@ impl CapsuleGenerator {
                 "blast_radius" => crate::types::Intent::BlastRadius,
                 "modify" => crate::types::Intent::Modify,
                 "explore" => crate::types::Intent::Explore,
-                _ => intent::detect_intent(query),
+                _ => {
+                    return Err(BexpError::Config(format!(
+                        "Invalid intent override '{name}'. Valid values: debug, blast_radius, modify, explore"
+                    )));
+                }
             }
         } else {
             intent::detect_intent(query)
@@ -70,7 +74,13 @@ impl CapsuleGenerator {
         tracing::debug!(intent = ?intent, "Detected intent");
 
         // Check cache (only for non-session queries since memory context varies)
-        let generation = queries::get_index_generation(&self.db.reader()).unwrap_or(0);
+        let generation = match queries::get_index_generation(&self.db.reader()) {
+            Ok(g) => g,
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to read index generation; bypassing cache");
+                u64::MAX
+            }
+        };
         if session_id.is_none() {
             if let Some(cached) = self
                 .cache
@@ -95,7 +105,7 @@ impl CapsuleGenerator {
         }
 
         // 3. Allocate token budget
-        let memory_budget = (token_budget as f64 * self.config.memory_budget_pct) as usize;
+        let memory_budget = token_budget * self.config.memory_budget_pct / 100;
         let code_budget = token_budget - memory_budget;
 
         // 4. Select pivots and supporting files
@@ -106,6 +116,7 @@ impl CapsuleGenerator {
             code_budget,
             self.config.default_skeleton_level,
             Some(&self.graph),
+            &self.config,
         )?;
 
         tracing::debug!(
@@ -121,7 +132,17 @@ impl CapsuleGenerator {
 
         // 6. Add memory context if session provided
         if let Some(sid) = session_id {
-            let memory_context = self.memory.search(query, 5, Some(sid)).unwrap_or_default();
+            let memory_context = match self.memory.search(query, 5, Some(sid)) {
+                Ok(ctx) => ctx,
+                Err(e) => {
+                    tracing::error!(
+                        session_id = sid,
+                        error = %e,
+                        "Memory search failed; capsule generated without session context"
+                    );
+                    String::new()
+                }
+            };
             if !memory_context.is_empty() {
                 output.push_str("\n---\n\n# Relevant Observations\n\n");
                 output.push_str(&memory_context);

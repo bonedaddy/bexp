@@ -21,8 +21,8 @@ pub async fn handle(server: &BexpServer) -> Result<CallToolResult, ErrorData> {
         config.watcher_debounce_ms
     ));
     output.push_str(&format!(
-        "- **Memory budget:** {:.0}%\n",
-        config.memory_budget_pct * 100.0
+        "- **Memory budget:** {}%\n",
+        config.memory_budget_pct
     ));
     output.push_str(&format!(
         "- **Session compress after:** {} hours\n",
