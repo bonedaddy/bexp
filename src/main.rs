@@ -240,6 +240,7 @@ async fn serve(workspace_root: PathBuf, health_port_override: Option<u16>) -> an
     let startup_db = db.clone();
     let startup_config = config.clone();
     let startup_workspace = workspace_root.clone();
+    let startup_skeletonizer = skeletonizer.clone();
     tokio::task::spawn_blocking(move || {
         tracing::info!("Running initial index in background...");
         match startup_indexer.full_index() {
@@ -262,6 +263,13 @@ async fn serve(workspace_root: PathBuf, health_port_override: Option<u16>) -> an
                         edges = startup_graph.edge_count(),
                         "Graph loaded"
                     );
+                }
+
+                // Pre-warm skeleton cache for all indexed files before marking ready
+                if let Err(e) = startup_skeletonizer
+                    .prewarm_skeletons(startup_config.default_skeleton_level)
+                {
+                    tracing::warn!(error = %e, "Skeleton pre-warm failed");
                 }
 
                 // Mark index as ready

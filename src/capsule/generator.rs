@@ -61,9 +61,14 @@ pub fn assemble_capsule(
     if !allocation.bridges.is_empty() {
         output.push_str("---\n\n## Bridge Context\n\n");
         for bridge in &allocation.bridges {
+            let sig = if bridge.signature.len() > 200 {
+                format!("{}…", &bridge.signature[..200])
+            } else {
+                bridge.signature.clone()
+            };
             output.push_str(&format!(
                 "- `{}` in `{}`: `{}`\n",
-                bridge.node_name, bridge.path, bridge.signature
+                bridge.node_name, bridge.path, sig
             ));
         }
         output.push('\n');

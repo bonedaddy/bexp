@@ -102,6 +102,46 @@ impl Skeletonizer {
         Ok(skeleton)
     }
 
+    /// Pre-warm skeleton cache for all files missing a cached skeleton at the given level.
+    /// Uses writer connection for both read and write to avoid deadlocks.
+    pub fn prewarm_skeletons(&self, level: DetailLevel) -> Result<usize> {
+        let conn = self.db.writer()?;
+        let files = queries::get_files_missing_skeleton(&conn, level.as_str())?;
+        let total = files.len();
+        if total == 0 {
+            return Ok(0);
+        }
+
+        tracing::info!(count = total, level = ?level, "Pre-warming skeleton cache");
+        let mut cached = 0;
+        for file in &files {
+            let ext = std::path::Path::new(&file.path)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            let lang = match Language::from_extension(ext) {
+                Some(l) => l,
+                None => continue,
+            };
+            let source = match std::fs::read_to_string(&file.path) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let skeleton = match SkeletonTransformer::transform(&source, lang, level) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let tokens = self.token_counter.count(&skeleton) as i64;
+            if queries::update_file_skeleton(&conn, file.id, level.as_str(), &skeleton, tokens)
+                .is_ok()
+            {
+                cached += 1;
+            }
+        }
+        tracing::info!(cached = cached, total = total, level = ?level, "Skeleton pre-warm complete");
+        Ok(cached)
+    }
+
     pub fn skeletonize_source(
         &self,
         source: &str,
@@ -113,5 +153,10 @@ impl Skeletonizer {
 
     pub fn count_tokens(&self, text: &str) -> usize {
         self.token_counter.count(text)
+    }
+
+    /// Fast approximate token count for budget allocation decisions.
+    pub fn count_tokens_fast(&self, text: &str) -> usize {
+        self.token_counter.count_fast(text)
     }
 }

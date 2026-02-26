@@ -17,6 +17,8 @@ pub async fn handle(
     let include_pagerank = params.include_pagerank.unwrap_or(false);
 
     let reader = server.db.reader().map_err(super::to_error_data)?;
+    // The FTS fast path already excludes imports when kind is unset,
+    // so we can request exactly the limit we need.
     let results = queries::query_nodes_filtered(
         &reader,
         params.query.as_deref(),
@@ -56,7 +58,12 @@ pub async fn handle(
         ));
 
         if let Some(sig) = &node.signature {
-            output.push_str(&format!("  Signature: `{sig}`\n"));
+            let short_sig = if sig.len() > 200 {
+                format!("{}…", &sig[..200])
+            } else {
+                sig.clone()
+            };
+            output.push_str(&format!("  Signature: `{short_sig}`\n"));
         }
         if let Some(doc) = &node.docstring {
             let short = if doc.len() > 100 {

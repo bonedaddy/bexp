@@ -142,6 +142,10 @@ pub fn allocate(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
+    // Batch-fetch node counts for all candidate files
+    let file_node_counts = queries::get_file_node_counts_batch(conn, &file_order)
+        .unwrap_or_default();
+
     let mut seen_files = HashSet::new();
     let mut included_node_ids: HashSet<i64> = HashSet::new();
 
@@ -169,8 +173,8 @@ pub fn allocate(
         };
         let total_lines = content.lines().count();
 
-        // Get total node count for this file
-        let total_node_count = queries::get_file_node_count(conn, file_id).unwrap_or(0) as usize;
+        // Get total node count for this file (from batch query)
+        let total_node_count = file_node_counts.get(&file_id).copied().unwrap_or(0) as usize;
         let matched_count = ranges.len();
 
         // Decide: full file or excerpt
@@ -178,7 +182,7 @@ pub fn allocate(
             total_lines < 50 || (total_node_count > 0 && matched_count * 2 >= total_node_count);
 
         if use_full_file {
-            let tokens = skeletonizer.count_tokens(&content);
+            let tokens = skeletonizer.count_tokens_fast(&content);
             if tokens <= pivot_remaining {
                 for r in ranges {
                     included_node_ids.insert(r.node_id);
@@ -206,7 +210,7 @@ pub fn allocate(
 
             for mr in merged {
                 let excerpt = extract_lines(&content, mr.line_start, mr.line_end);
-                let tokens = skeletonizer.count_tokens(&excerpt);
+                let tokens = skeletonizer.count_tokens_fast(&excerpt);
                 if tokens <= pivot_remaining {
                     for r in ranges {
                         if (r.line_start as usize) >= mr.line_start
@@ -251,7 +255,7 @@ pub fn allocate(
                 break;
             }
             let sig = nr.signature.as_deref().unwrap_or(&nr.name);
-            let tokens = skeletonizer.count_tokens(sig);
+            let tokens = skeletonizer.count_tokens_fast(sig);
             if tokens <= bridge_remaining {
                 bridge_remaining -= tokens;
                 allocation.bridges.push(BridgeExcerpt {
@@ -287,7 +291,9 @@ pub fn allocate(
     }
 
     for (file_id, score) in skeleton_files {
-        if skeleton_remaining < config.min_skeleton_budget {
+        if skeleton_remaining < config.min_skeleton_budget
+            || allocation.skeletons.len() >= config.max_skeleton_files
+        {
             break;
         }
 
@@ -313,41 +319,71 @@ pub fn allocate(
             DetailLevel::Minimal
         };
 
-        let (skeleton, level) = {
-            let content = match std::fs::read_to_string(&file.path) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-
-            let levels_to_try = match preferred_level {
-                DetailLevel::Detailed => vec![
-                    DetailLevel::Detailed,
-                    DetailLevel::Standard,
-                    DetailLevel::Minimal,
-                ],
-                DetailLevel::Standard => vec![DetailLevel::Standard, DetailLevel::Minimal],
-                DetailLevel::Minimal => vec![DetailLevel::Minimal],
-            };
-
-            let mut chosen = None;
-            for level in levels_to_try {
-                let skel = skeletonizer
-                    .skeletonize_source(&content, lang, level)
-                    .unwrap_or_default();
-                let tok = skeletonizer.count_tokens(&skel);
-                if tok <= skeleton_remaining {
-                    chosen = Some((skel, level));
-                    break;
-                }
-            }
-
-            match chosen {
-                Some(c) => c,
-                None => continue,
-            }
+        let levels_to_try = match preferred_level {
+            DetailLevel::Detailed => vec![
+                DetailLevel::Detailed,
+                DetailLevel::Standard,
+                DetailLevel::Minimal,
+            ],
+            DetailLevel::Standard => vec![DetailLevel::Standard, DetailLevel::Minimal],
+            DetailLevel::Minimal => vec![DetailLevel::Minimal],
         };
 
-        let tokens = skeletonizer.count_tokens(&skeleton);
+        let mut chosen = None;
+        for level in levels_to_try {
+            // Check DB skeleton cache first (via reader, no writer lock)
+            let cached = match level {
+                DetailLevel::Minimal => conn
+                    .query_row(
+                        "SELECT skeleton_minimal FROM files WHERE id = ?1",
+                        rusqlite::params![file_id],
+                        |row| row.get::<_, Option<String>>(0),
+                    )
+                    .ok()
+                    .flatten(),
+                DetailLevel::Standard => conn
+                    .query_row(
+                        "SELECT skeleton_standard FROM files WHERE id = ?1",
+                        rusqlite::params![file_id],
+                        |row| row.get::<_, Option<String>>(0),
+                    )
+                    .ok()
+                    .flatten(),
+                DetailLevel::Detailed => conn
+                    .query_row(
+                        "SELECT skeleton_detailed FROM files WHERE id = ?1",
+                        rusqlite::params![file_id],
+                        |row| row.get::<_, Option<String>>(0),
+                    )
+                    .ok()
+                    .flatten(),
+            };
+
+            let skel = if let Some(cached_skel) = cached {
+                cached_skel
+            } else {
+                // Cache miss: generate on the fly (no writer lock to avoid deadlock)
+                let content = match std::fs::read_to_string(&file.path) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+                skeletonizer
+                    .skeletonize_source(&content, lang, level)
+                    .unwrap_or_default()
+            };
+
+            let tok = skeletonizer.count_tokens_fast(&skel);
+            if tok <= skeleton_remaining {
+                chosen = Some((skel, tok, level));
+                break;
+            }
+        }
+
+        let (skeleton, tokens, level) = match chosen {
+            Some(c) => c,
+            None => continue,
+        };
+
         skeleton_remaining -= tokens;
         allocation.skeletons.push(SkeletonFile {
             file_id,
