@@ -340,7 +340,7 @@ fn extract_function(node: Node, source: &str, file_path: &str) -> Option<Extract
         .map(|b| b.start_byte())
         .unwrap_or(node.end_byte());
     let signature = source[node.start_byte()..sig_end].trim().to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
 
     Some(ExtractedNode {
         kind: NodeKind::Function,
@@ -361,7 +361,7 @@ fn extract_function(node: Node, source: &str, file_path: &str) -> Option<Extract
 fn extract_struct(node: Node, source: &str, file_path: &str) -> Option<ExtractedNode> {
     let name_node = find_child_by_field(node, "name")?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
 
     Some(ExtractedNode {
         kind: NodeKind::Struct,
@@ -382,7 +382,7 @@ fn extract_struct(node: Node, source: &str, file_path: &str) -> Option<Extracted
 fn extract_enum(node: Node, source: &str, file_path: &str) -> Option<ExtractedNode> {
     let name_node = find_child_by_field(node, "name")?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
 
     Some(ExtractedNode {
         kind: NodeKind::Enum,
@@ -403,7 +403,7 @@ fn extract_enum(node: Node, source: &str, file_path: &str) -> Option<ExtractedNo
 fn extract_class(node: Node, source: &str, file_path: &str) -> Option<ExtractedNode> {
     let name_node = find_child_by_field(node, "name")?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
 
     Some(ExtractedNode {
         kind: NodeKind::Class,
@@ -452,7 +452,7 @@ fn extract_base_classes(
 fn extract_namespace(node: Node, source: &str, file_path: &str) -> Option<ExtractedNode> {
     let name_node = find_child_by_field(node, "name")?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
 
     Some(ExtractedNode {
         kind: NodeKind::Module,
@@ -473,7 +473,7 @@ fn extract_namespace(node: Node, source: &str, file_path: &str) -> Option<Extrac
 fn extract_typedef(node: Node, source: &str, file_path: &str) -> Option<ExtractedNode> {
     let declarator = find_child_by_field(node, "declarator")?;
     let name = find_identifier_in_declarator(declarator, source)?;
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
     let signature = Some(
         get_node_text(node, source)
             .lines()
@@ -502,7 +502,7 @@ fn extract_alias(node: Node, source: &str, file_path: &str) -> Option<ExtractedN
     // C++11 `using X = Y;`
     let name_node = find_child_by_field(node, "name")?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
     let signature = Some(
         get_node_text(node, source)
             .lines()
@@ -567,7 +567,7 @@ fn extract_include(
 fn extract_declaration(node: Node, source: &str, file_path: &str) -> Option<ExtractedNode> {
     let declarator = find_child_by_field(node, "declarator")?;
     let name = find_identifier_in_declarator(declarator, source)?;
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
 
     let text = get_node_text(node, source);
     let kind = if text.starts_with("const ") || text.starts_with("constexpr ") {

@@ -30,7 +30,7 @@ pub async fn handle(
         let summary = session
             .summary
             .as_deref()
-            .map(|s| format!("\n  Summary: {}", s))
+            .map(|s| format!("\n  Summary: {s}"))
             .unwrap_or_default();
         output.push_str(&format!(
             "- **{}**{} — {} observations\n  Created: {} | Updated: {}{}\n",

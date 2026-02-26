@@ -66,7 +66,7 @@ impl MemoryService {
                 ));
                 if obs.is_stale {
                     if let Some(reason) = &obs.stale_reason {
-                        output.push_str(&format!("**Stale reason:** {}\n\n", reason));
+                        output.push_str(&format!("**Stale reason:** {reason}\n\n"));
                     }
                 }
             }
@@ -84,7 +84,7 @@ impl MemoryService {
                         prev.id, prev.created_at
                     ));
                     if let Some(summary) = &prev.summary {
-                        output.push_str(&format!("{}\n\n", summary));
+                        output.push_str(&format!("{summary}\n\n"));
                     }
                     let obs = observation::get_observations_for_session(conn, &prev.id)?;
                     for o in obs.iter().take(5) {
@@ -179,8 +179,7 @@ impl MemoryService {
         crate::metrics::record_observation_saved();
 
         Ok(format!(
-            "Observation saved (id: {}).\n**Headline:** {}",
-            obs_id, headline
+            "Observation saved (id: {obs_id}).\n**Headline:** {headline}"
         ))
     }
 }

@@ -28,7 +28,7 @@ pub async fn handle(server: &BexpServer) -> Result<CallToolResult, ErrorData> {
     if !stats.language_breakdown.is_empty() {
         output.push_str("\n## Language Breakdown\n\n");
         for (lang, count) in &stats.language_breakdown {
-            output.push_str(&format!("- **{}:** {} files\n", lang, count));
+            output.push_str(&format!("- **{lang}:** {count} files\n"));
         }
     }
 

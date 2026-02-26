@@ -56,7 +56,7 @@ pub async fn handle(
         ));
 
         if let Some(sig) = &node.signature {
-            output.push_str(&format!("  Signature: `{}`\n", sig));
+            output.push_str(&format!("  Signature: `{sig}`\n"));
         }
         if let Some(doc) = &node.docstring {
             let short = if doc.len() > 100 {
@@ -64,17 +64,17 @@ pub async fn handle(
             } else {
                 doc.clone()
             };
-            output.push_str(&format!("  Doc: {}\n", short));
+            output.push_str(&format!("  Doc: {short}\n"));
         }
         if include_pagerank {
             if let Some(qn) = &node.qualified_name {
                 if let Some(db_id) = server.graph.find_node_index_by_name(qn) {
                     let pr = server.graph.get_pagerank(db_id);
-                    output.push_str(&format!("  PageRank: {:.6}\n", pr));
+                    output.push_str(&format!("  PageRank: {pr:.6}\n"));
                 }
             } else if let Some(db_id) = server.graph.find_node_index_by_name(&node.name) {
                 let pr = server.graph.get_pagerank(db_id);
-                output.push_str(&format!("  PageRank: {:.6}\n", pr));
+                output.push_str(&format!("  PageRank: {pr:.6}\n"));
             }
         }
     }

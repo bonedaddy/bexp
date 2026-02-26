@@ -31,7 +31,6 @@ impl Node{i} {{
     }}
 }}
 "#,
-            i = i,
         );
 
         // Add cross-references to prior modules
@@ -58,11 +57,11 @@ pub fn bridge_{i}_to_{prev2}(a: &Node{i}, _b: &Node{prev2}) -> String {{
             ));
         }
 
-        fs::write(dir.join(format!("node_{}.rs", i)), content).unwrap();
+        fs::write(dir.join(format!("node_{i}.rs")), content).unwrap();
     }
 
     let lib_content: String = (0..30)
-        .map(|i| format!("pub mod node_{};", i))
+        .map(|i| format!("pub mod node_{i};"))
         .collect::<Vec<_>>()
         .join("\n");
     fs::write(dir.join("lib.rs"), lib_content).unwrap();

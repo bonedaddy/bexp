@@ -271,11 +271,11 @@ fn extract_function(
         find_child_by_kind(node, "type_annotation").map(|t| get_node_text(t, source).to_string());
 
     let signature = match return_type {
-        Some(ret) => format!("{}{} {}", name, params, ret),
-        None => format!("{}{}", name, params),
+        Some(ret) => format!("{name}{params} {ret}"),
+        None => format!("{name}{params}"),
     };
 
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
 
     let is_export = node
         .parent()
@@ -304,7 +304,7 @@ fn extract_class(node: Node, source: &str, file_path: &str) -> Option<ExtractedN
     let name_node = find_child_by_kind(node, "type_identifier")
         .or_else(|| find_child_by_kind(node, "identifier"))?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
 
     let is_export = node
         .parent()
@@ -333,7 +333,7 @@ fn extract_interface(node: Node, source: &str, file_path: &str) -> Option<Extrac
     let name_node = find_child_by_kind(node, "type_identifier")
         .or_else(|| find_child_by_kind(node, "identifier"))?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
 
     let is_export = node
         .parent()
@@ -362,7 +362,7 @@ fn extract_type_alias(node: Node, source: &str, file_path: &str) -> Option<Extra
     let name_node = find_child_by_kind(node, "type_identifier")
         .or_else(|| find_child_by_kind(node, "identifier"))?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
     let signature = Some(
         get_node_text(node, source)
             .lines()
@@ -395,7 +395,7 @@ fn extract_type_alias(node: Node, source: &str, file_path: &str) -> Option<Extra
 fn extract_enum(node: Node, source: &str, file_path: &str) -> Option<ExtractedNode> {
     let name_node = find_child_by_kind(node, "identifier")?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
 
     let is_export = node
         .parent()
@@ -620,7 +620,7 @@ fn extract_variable_declaration(
             if child.kind() == "variable_declarator" {
                 if let Some(name_node) = find_child_by_kind(child, "identifier") {
                     let name = get_node_text(name_node, source).to_string();
-                    let qualified_name = format!("{}::{}", file_path, name);
+                    let qualified_name = format!("{file_path}::{name}");
 
                     // Check if it's a const (likely constant)
                     let text = get_node_text(node, source);

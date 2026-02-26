@@ -39,7 +39,7 @@ pub async fn handle(server: &BexpServer, params: SetupParams) -> Result<CallTool
     output.push_str("- `.bexp/config.toml`\n");
     output.push_str("- `.bexp/.gitignore`\n\n");
     output.push_str("**Configuration:**\n");
-    output.push_str(&format!("```toml\n{}\n```\n", config_content));
+    output.push_str(&format!("```toml\n{config_content}\n```\n"));
 
     Ok(CallToolResult::success(vec![Content::text(output)]))
 }
@@ -152,7 +152,7 @@ fn generate_config(project_type: &ProjectType) -> String {
 
     config.push_str("exclude_patterns = [\n");
     for (i, e) in excludes.iter().enumerate() {
-        config.push_str(&format!("    \"{}\"", e));
+        config.push_str(&format!("    \"{e}\""));
         if i < excludes.len() - 1 {
             config.push(',');
         }

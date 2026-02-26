@@ -195,7 +195,7 @@ fn extract_function(node: Node, source: &str, file_path: &str) -> Option<Extract
         find_child_by_kind(node, "type").map(|t| format!(" -> {}", get_node_text(t, source)));
 
     let signature = format!("def {}{}{}", name, params, return_type.unwrap_or_default());
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
 
     // Extract docstring
     let docstring = find_child_by_kind(node, "block")
@@ -247,7 +247,7 @@ fn extract_function(node: Node, source: &str, file_path: &str) -> Option<Extract
 fn extract_class(node: Node, source: &str, file_path: &str) -> Option<ExtractedNode> {
     let name_node = find_child_by_kind(node, "identifier")?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
 
     let docstring = find_child_by_kind(node, "block")
         .and_then(|block| block.child(0))
@@ -369,7 +369,7 @@ fn extract_assignment(node: Node, source: &str, file_path: &str) -> Option<Extra
         return None;
     }
 
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
 
     Some(ExtractedNode {
         kind: NodeKind::Constant,

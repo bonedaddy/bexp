@@ -44,7 +44,7 @@ pub async fn handle(
         let ctx = edge
             .context
             .as_deref()
-            .map(|c| format!(" [{}]", c))
+            .map(|c| format!(" [{c}]"))
             .unwrap_or_default();
         output.push_str(&format!(
             "- `{}` —[{}]→ `{}` (confidence: {:.2}){}\n  {} → {}\n",

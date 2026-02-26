@@ -86,7 +86,7 @@ pub fn validate_workspace_path(
         Ok(canonical) => {
             if !canonical.starts_with(&canonical_root) {
                 return Err(rmcp::model::ErrorData::invalid_params(
-                    format!("Path '{}' resolves outside the workspace", user_path),
+                    format!("Path '{user_path}' resolves outside the workspace"),
                     None,
                 ));
             }
@@ -97,7 +97,7 @@ pub fn validate_workspace_path(
             let normalized = normalize_path(&joined);
             if !normalized.starts_with(&canonical_root) {
                 return Err(rmcp::model::ErrorData::invalid_params(
-                    format!("Path '{}' resolves outside the workspace", user_path),
+                    format!("Path '{user_path}' resolves outside the workspace"),
                     None,
                 ));
             }

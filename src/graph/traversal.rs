@@ -19,7 +19,7 @@ pub fn get_callers(
         if nodes.is_empty() {
             continue;
         }
-        output.push_str(&format!("## Depth {}\n\n", level));
+        output.push_str(&format!("## Depth {level}\n\n"));
         for &idx in nodes {
             let node = &graph[idx];
             output.push_str(&format!(
@@ -48,7 +48,7 @@ pub fn get_callees(
         if nodes.is_empty() {
             continue;
         }
-        output.push_str(&format!("## Depth {}\n\n", level));
+        output.push_str(&format!("## Depth {level}\n\n"));
         for &idx in nodes {
             let node = &graph[idx];
             output.push_str(&format!(

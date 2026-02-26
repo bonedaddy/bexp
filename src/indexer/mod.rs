@@ -85,7 +85,7 @@ impl IndexerService {
         }
 
         let hash = xxhash_rust::xxh3::xxh3_64(&hasher_data);
-        Ok(format!("{:016x}", hash))
+        Ok(format!("{hash:016x}"))
     }
 
     /// Write an extracted file's nodes, edges, and unresolved refs into the database.

@@ -463,7 +463,7 @@ fn extract_function(
         .map(|t| format!(" -> {}", get_node_text(t, source)));
 
     let signature = format!("fn {}{}{}", name, params, return_type.unwrap_or_default());
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
     let is_pub = visibility.as_deref() == Some("pub");
 
     // Detect if this is a method (inside impl block, with self parameter)
@@ -562,7 +562,7 @@ fn extract_struct(
 ) -> Option<ExtractedNode> {
     let name_node = find_child_by_kind(node, "type_identifier")?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
     let visibility = extract_visibility(node, source);
     let is_pub = visibility.as_deref() == Some("pub");
 
@@ -619,7 +619,7 @@ fn build_struct_signature(node: Node, source: &str, name: &str) -> Option<String
 fn extract_enum(node: Node, source: &str, file_path: &str) -> Option<ExtractedNode> {
     let name_node = find_child_by_kind(node, "type_identifier")?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
     let visibility = extract_visibility(node, source);
     let is_pub = visibility.as_deref() == Some("pub");
 
@@ -664,7 +664,7 @@ fn extract_enum_variants(
             if child.kind() == "enum_variant" {
                 if let Some(name_node) = find_child_by_kind(child, "identifier") {
                     let variant_name = get_node_text(name_node, source).to_string();
-                    let qualified_name = format!("{}::{}::{}", file_path, enum_name, variant_name);
+                    let qualified_name = format!("{file_path}::{enum_name}::{variant_name}");
 
                     let idx = nodes.len();
                     nodes.push(ExtractedNode {
@@ -695,7 +695,7 @@ fn extract_enum_variants(
 fn extract_trait(node: Node, source: &str, file_path: &str) -> Option<ExtractedNode> {
     let name_node = find_child_by_kind(node, "type_identifier")?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
     let visibility = extract_visibility(node, source);
     let is_pub = visibility.as_deref() == Some("pub");
 
@@ -719,11 +719,11 @@ fn extract_impl(node: Node, source: &str, file_path: &str) -> Option<ExtractedNo
     let type_node = find_child_by_kind(node, "type_identifier")
         .or_else(|| find_child_by_kind(node, "generic_type"))?;
     let name = get_node_text(type_node, source).to_string();
-    let qualified_name = format!("{}::impl_{}", file_path, name);
+    let qualified_name = format!("{file_path}::impl_{name}");
 
     Some(ExtractedNode {
         kind: NodeKind::Impl,
-        name: format!("impl {}", name),
+        name: format!("impl {name}"),
         qualified_name: Some(qualified_name),
         signature: None,
         docstring: None,
@@ -785,7 +785,7 @@ fn extract_impl_trait_ref(
 fn extract_type_alias(node: Node, source: &str, file_path: &str) -> Option<ExtractedNode> {
     let name_node = find_child_by_kind(node, "type_identifier")?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
     let visibility = extract_visibility(node, source);
     let signature = Some(
         get_node_text(node, source)
@@ -814,7 +814,7 @@ fn extract_type_alias(node: Node, source: &str, file_path: &str) -> Option<Extra
 fn extract_constant(node: Node, source: &str, file_path: &str) -> Option<ExtractedNode> {
     let name_node = find_child_by_kind(node, "identifier")?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
     let visibility = extract_visibility(node, source);
     let signature = Some(
         get_node_text(node, source)
@@ -843,7 +843,7 @@ fn extract_constant(node: Node, source: &str, file_path: &str) -> Option<Extract
 fn extract_module(node: Node, source: &str, file_path: &str) -> Option<ExtractedNode> {
     let name_node = find_child_by_kind(node, "identifier")?;
     let name = get_node_text(name_node, source).to_string();
-    let qualified_name = format!("{}::{}", file_path, name);
+    let qualified_name = format!("{file_path}::{name}");
     let visibility = extract_visibility(node, source);
 
     Some(ExtractedNode {

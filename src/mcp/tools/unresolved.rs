@@ -38,7 +38,7 @@ pub async fn handle(
         let import = uref
             .import_path
             .as_deref()
-            .map(|p| format!(" (import: {})", p))
+            .map(|p| format!(" (import: {p})"))
             .unwrap_or_default();
         output.push_str(&format!(
             "- `{}` → `{}` [{}]{} — in `{}`\n",

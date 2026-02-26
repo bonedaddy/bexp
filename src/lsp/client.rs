@@ -139,7 +139,7 @@ impl LspClient {
 
     pub fn initialize(&mut self) -> anyhow::Result<()> {
         let workspace_uri = Uri::from_str(&format!("file://{}", self.workspace_root))
-            .map_err(|e| anyhow::anyhow!("Invalid workspace path: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Invalid workspace path: {e}"))?;
 
         let params = InitializeParams {
             capabilities: ClientCapabilities::default(),
@@ -173,8 +173,8 @@ impl LspClient {
         };
         let language_id = detect_language_id(file_path);
 
-        let uri = Uri::from_str(&format!("file://{}", file_path))
-            .map_err(|e| anyhow::anyhow!("Invalid file path: {}: {}", file_path, e))?;
+        let uri = Uri::from_str(&format!("file://{file_path}"))
+            .map_err(|e| anyhow::anyhow!("Invalid file path: {file_path}: {e}"))?;
 
         let params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
@@ -199,8 +199,8 @@ impl LspClient {
         // Ensure file is opened before requesting definition
         self.ensure_file_opened(file_path)?;
 
-        let file_uri = Uri::from_str(&format!("file://{}", file_path))
-            .map_err(|e| anyhow::anyhow!("Invalid file path: {}: {}", file_path, e))?;
+        let file_uri = Uri::from_str(&format!("file://{file_path}"))
+            .map_err(|e| anyhow::anyhow!("Invalid file path: {file_path}: {e}"))?;
 
         let params = GotoDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {

@@ -18,11 +18,10 @@ pub fn generate_hooks(workspace_root: &Path, bexp_binary: &str) -> Result<()> {
     let pre_commit_content = format!(
         r#"#!/bin/sh
 # bexp: Flush WAL before commit
-if command -v {} >/dev/null 2>&1; then
-    {} flush-wal 2>/dev/null || true
+if command -v {bexp_binary} >/dev/null 2>&1; then
+    {bexp_binary} flush-wal 2>/dev/null || true
 fi
-"#,
-        bexp_binary, bexp_binary
+"#
     );
     write_hook(&pre_commit, &pre_commit_content)?;
 
@@ -31,11 +30,10 @@ fi
     let post_merge_content = format!(
         r#"#!/bin/sh
 # bexp: Re-index after merge
-if command -v {} >/dev/null 2>&1; then
-    {} reindex 2>/dev/null &
+if command -v {bexp_binary} >/dev/null 2>&1; then
+    {bexp_binary} reindex 2>/dev/null &
 fi
-"#,
-        bexp_binary, bexp_binary
+"#
     );
     write_hook(&post_merge, &post_merge_content)?;
 
@@ -46,12 +44,11 @@ fi
 # bexp: Re-index after branch switch
 # Only run on branch checkout (not file checkout)
 if [ "$3" = "1" ]; then
-    if command -v {} >/dev/null 2>&1; then
-        {} reindex 2>/dev/null &
+    if command -v {bexp_binary} >/dev/null 2>&1; then
+        {bexp_binary} reindex 2>/dev/null &
     fi
 fi
-"#,
-        bexp_binary, bexp_binary
+"#
     );
     write_hook(&post_checkout, &post_checkout_content)?;
 

@@ -29,7 +29,7 @@ pub fn validate_limit(limit: Option<usize>, default: usize) -> Result<usize, Err
     }
     if limit > MAX_LIMIT {
         return Err(ErrorData::invalid_params(
-            format!("limit too large: {} (max {})", limit, MAX_LIMIT),
+            format!("limit too large: {limit} (max {MAX_LIMIT})"),
             None,
         ));
     }
@@ -43,7 +43,7 @@ pub fn validate_depth(depth: Option<usize>, default: usize) -> Result<usize, Err
     }
     if depth > MAX_DEPTH {
         return Err(ErrorData::invalid_params(
-            format!("depth too large: {} (max {})", depth, MAX_DEPTH),
+            format!("depth too large: {depth} (max {MAX_DEPTH})"),
             None,
         ));
     }

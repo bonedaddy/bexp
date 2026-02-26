@@ -51,14 +51,13 @@ pub fn create_handler_{i}() -> Handler{i} {{
 pub fn process_request_{i}(handler: &Handler{i}, input: &str) -> String {{
     handler.handle_request(input).unwrap_or_default()
 }}
-"#,
-            i = i
+"#
         );
-        fs::write(dir.join(format!("handler_{}.rs", i)), content).unwrap();
+        fs::write(dir.join(format!("handler_{i}.rs")), content).unwrap();
     }
 
     let lib_content: String = (0..num_files)
-        .map(|i| format!("pub mod handler_{};", i))
+        .map(|i| format!("pub mod handler_{i};"))
         .collect::<Vec<_>>()
         .join("\n");
     fs::write(dir.join("lib.rs"), lib_content).unwrap();

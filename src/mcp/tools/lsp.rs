@@ -50,8 +50,7 @@ pub async fn handle(
     }
 
     Ok(CallToolResult::success(vec![Content::text(format!(
-        "LSP edges submitted: {} added, {} skipped (unresolved symbols)",
-        added, skipped
+        "LSP edges submitted: {added} added, {skipped} skipped (unresolved symbols)"
     ))]))
 }
 

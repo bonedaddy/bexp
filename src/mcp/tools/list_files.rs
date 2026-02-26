@@ -33,7 +33,7 @@ pub async fn handle(
     for file in &results {
         let tokens = file
             .token_count
-            .map(|t| format!("{} tokens", t))
+            .map(|t| format!("{t} tokens"))
             .unwrap_or_else(|| "n/a".to_string());
         output.push_str(&format!(
             "- `{}` ({}, {} bytes, {}, hash: {}, indexed: {})\n",

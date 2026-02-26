@@ -119,7 +119,7 @@ impl GraphEngine {
                 let node = &graph[idx];
                 node.name == symbol || node.qualified_name.as_deref() == Some(symbol)
             })
-            .ok_or_else(|| BexpError::NotFound(format!("Symbol not found: {}", symbol)))?;
+            .ok_or_else(|| BexpError::NotFound(format!("Symbol not found: {symbol}")))?;
 
         let result = match direction {
             "callers" => traversal::get_callers(&graph, node_idx, depth, edge_kinds),
@@ -130,12 +130,7 @@ impl GraphEngine {
                 result.push_str(&traversal::get_callees(&graph, node_idx, depth, edge_kinds));
                 result
             }
-            _ => {
-                return Err(BexpError::Graph(format!(
-                    "Invalid direction: {}",
-                    direction
-                )))
-            }
+            _ => return Err(BexpError::Graph(format!("Invalid direction: {direction}"))),
         };
 
         Ok(result)
@@ -152,7 +147,7 @@ impl GraphEngine {
                 let node = &graph[idx];
                 node.name == from || node.qualified_name.as_deref() == Some(from)
             })
-            .ok_or_else(|| BexpError::NotFound(format!("Source symbol not found: {}", from)))?;
+            .ok_or_else(|| BexpError::NotFound(format!("Source symbol not found: {from}")))?;
 
         let to_idx = graph
             .node_indices()
@@ -160,18 +155,17 @@ impl GraphEngine {
                 let node = &graph[idx];
                 node.name == to || node.qualified_name.as_deref() == Some(to)
             })
-            .ok_or_else(|| BexpError::NotFound(format!("Target symbol not found: {}", to)))?;
+            .ok_or_else(|| BexpError::NotFound(format!("Target symbol not found: {to}")))?;
 
         let paths = traversal::find_all_paths(&graph, from_idx, to_idx, max_depth);
 
         if paths.is_empty() {
             return Ok(format!(
-                "No paths found from `{}` to `{}` within {} hops.",
-                from, to, max_depth
+                "No paths found from `{from}` to `{to}` within {max_depth} hops."
             ));
         }
 
-        let mut output = format!("# Paths from `{}` to `{}`\n\n", from, to);
+        let mut output = format!("# Paths from `{from}` to `{to}`\n\n");
         for (i, path) in paths.iter().enumerate() {
             output.push_str(&format!("## Path {} ({} hops)\n\n", i + 1, path.len() - 1));
             for (j, idx) in path.iter().enumerate() {

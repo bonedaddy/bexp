@@ -43,15 +43,14 @@ pub fn process_widget_{i}(w: &Widget{i}) -> u64 {{
 pub fn aggregate_{i}(widgets: &[Widget{i}]) -> f64 {{
     widgets.iter().map(|w| w.compute()).sum()
 }}
-"#,
-            i = i
+"#
         );
-        fs::write(dir.join(format!("mod_{}.rs", i)), content).unwrap();
+        fs::write(dir.join(format!("mod_{i}.rs")), content).unwrap();
     }
 
     // Write a lib.rs that references the modules
     let lib_content: String = (0..num_files)
-        .map(|i| format!("pub mod mod_{};", i))
+        .map(|i| format!("pub mod mod_{i};"))
         .collect::<Vec<_>>()
         .join("\n");
     fs::write(dir.join("lib.rs"), lib_content).unwrap();
@@ -153,8 +152,7 @@ impl Service{i} {{
         self.count = 0;
     }}
 }}
-"#,
-                        i = i
+"#
                     ));
                 }
                 fs::write(&medium_file, &source).unwrap();
