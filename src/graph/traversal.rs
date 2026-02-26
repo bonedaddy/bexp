@@ -5,6 +5,9 @@ use petgraph::Direction;
 
 use super::{GraphEdge, GraphNode};
 
+/// Maximum number of paths returned by `find_all_paths`.
+const MAX_PATHS: usize = 10;
+
 /// BFS to find all callers (incoming edges) up to `depth` levels.
 pub fn get_callers(
     graph: &DiGraph<GraphNode, GraphEdge>,
@@ -146,7 +149,7 @@ fn dfs_paths(
     }
 
     // Limit total paths found
-    if paths.len() >= 10 {
+    if paths.len() >= MAX_PATHS {
         return;
     }
 

@@ -58,7 +58,16 @@ impl<'a> Scanner<'a> {
     }
 
     fn is_excluded(&self, path: &Path, root: &Path) -> bool {
-        let rel = path.strip_prefix(root).unwrap_or(path);
-        self.config.is_excluded(rel)
+        match path.strip_prefix(root) {
+            Ok(rel) => self.config.is_excluded(rel),
+            Err(_) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    root = %root.display(),
+                    "Path outside workspace root, excluding"
+                );
+                true
+            }
+        }
     }
 }

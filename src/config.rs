@@ -64,6 +64,38 @@ pub struct BexpConfig {
 
     #[serde(default = "default_shutdown_drain_secs")]
     pub shutdown_drain_secs: u64,
+
+    /// Context lines to pad around each node range in capsule excerpts.
+    #[serde(default = "default_context_padding")]
+    pub context_padding: usize,
+
+    /// Maximum number of top files to consider for pivot excerpts.
+    #[serde(default = "default_max_pivot_files")]
+    pub max_pivot_files: usize,
+
+    /// Minimum remaining budget (in tokens) to continue allocating pivots.
+    #[serde(default = "default_min_pivot_budget")]
+    pub min_pivot_budget: usize,
+
+    /// Minimum remaining budget (in tokens) to continue allocating bridges.
+    #[serde(default = "default_min_bridge_budget")]
+    pub min_bridge_budget: usize,
+
+    /// Minimum remaining budget (in tokens) to continue allocating skeletons.
+    #[serde(default = "default_min_skeleton_budget")]
+    pub min_skeleton_budget: usize,
+
+    /// Percentage of total token budget reserved for overhead (headers, formatting).
+    #[serde(default = "default_overhead_reserve_pct")]
+    pub overhead_reserve_pct: usize,
+
+    /// Percentage of usable budget allocated to pivot excerpts.
+    #[serde(default = "default_pivot_budget_pct")]
+    pub pivot_budget_pct: usize,
+
+    /// Percentage of usable budget allocated to bridge context.
+    #[serde(default = "default_bridge_budget_pct")]
+    pub bridge_budget_pct: usize,
 }
 
 fn default_token_budget() -> usize {
@@ -102,6 +134,30 @@ fn default_capsule_cache_ttl_secs() -> u64 {
 fn default_shutdown_drain_secs() -> u64 {
     5
 }
+fn default_context_padding() -> usize {
+    5
+}
+fn default_max_pivot_files() -> usize {
+    10
+}
+fn default_min_pivot_budget() -> usize {
+    50
+}
+fn default_min_bridge_budget() -> usize {
+    20
+}
+fn default_min_skeleton_budget() -> usize {
+    50
+}
+fn default_overhead_reserve_pct() -> usize {
+    10
+}
+fn default_pivot_budget_pct() -> usize {
+    60
+}
+fn default_bridge_budget_pct() -> usize {
+    10
+}
 
 impl Default for BexpConfig {
     fn default() -> Self {
@@ -123,6 +179,14 @@ impl Default for BexpConfig {
             capsule_cache_ttl_secs: default_capsule_cache_ttl_secs(),
             health_port: None,
             shutdown_drain_secs: default_shutdown_drain_secs(),
+            context_padding: default_context_padding(),
+            max_pivot_files: default_max_pivot_files(),
+            min_pivot_budget: default_min_pivot_budget(),
+            min_bridge_budget: default_min_bridge_budget(),
+            min_skeleton_budget: default_min_skeleton_budget(),
+            overhead_reserve_pct: default_overhead_reserve_pct(),
+            pivot_budget_pct: default_pivot_budget_pct(),
+            bridge_budget_pct: default_bridge_budget_pct(),
         }
     }
 }

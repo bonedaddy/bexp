@@ -80,12 +80,12 @@ impl Skeletonizer {
 
         let skeleton = SkeletonTransformer::transform(&source, lang, level)?;
 
-        // Cache it
+        // Cache it — use writer for both lookup and update to avoid TOCTOU
+        // where the file could be deleted between reader lookup and writer update.
         {
-            let reader = self.db.reader();
-            if let Ok(Some(file)) = queries::get_file_by_path(&reader, &rel_path) {
+            let conn = self.db.writer();
+            if let Ok(Some(file)) = queries::get_file_by_path(&conn, &rel_path) {
                 let tokens = self.token_counter.count(&skeleton) as i64;
-                let conn = self.db.writer();
                 let _ = queries::update_file_skeleton(
                     &conn,
                     file.id,

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::config::BexpConfig;
 use crate::db::{queries, Database};
-use crate::error::Result;
+use crate::error::{BexpError, Result};
 use crate::graph::GraphEngine;
 use crate::memory::MemoryService;
 use crate::skeleton::Skeletonizer;
@@ -62,7 +62,11 @@ impl CapsuleGenerator {
                 "blast_radius" => crate::types::Intent::BlastRadius,
                 "modify" => crate::types::Intent::Modify,
                 "explore" => crate::types::Intent::Explore,
-                _ => intent::detect_intent(query),
+                _ => {
+                    return Err(BexpError::Config(format!(
+                        "Invalid intent override '{name}'. Valid values: debug, blast_radius, modify, explore"
+                    )));
+                }
             }
         } else {
             intent::detect_intent(query)
@@ -94,8 +98,9 @@ impl CapsuleGenerator {
             return Ok("No relevant code found for the given query.".to_string());
         }
 
-        // 3. Allocate token budget
-        let memory_budget = (token_budget as f64 * self.config.memory_budget_pct) as usize;
+        // 3. Allocate token budget (memory_budget_pct is 0.0..1.0)
+        let memory_pct = (self.config.memory_budget_pct * 100.0) as usize;
+        let memory_budget = token_budget * memory_pct / 100;
         let code_budget = token_budget - memory_budget;
 
         // 4. Select pivots and supporting files
@@ -106,6 +111,7 @@ impl CapsuleGenerator {
             code_budget,
             self.config.default_skeleton_level,
             Some(&self.graph),
+            &self.config,
         )?;
 
         tracing::debug!(

@@ -70,8 +70,14 @@ pub fn detect_intent(query: &str) -> Intent {
         Intent::Debug
     } else if blast_score > debug_score && blast_score > modify_score {
         Intent::BlastRadius
-    } else if modify_score > 0 {
+    } else if modify_score > debug_score && modify_score > blast_score {
         Intent::Modify
+    } else if modify_score > 0 && modify_score >= blast_score && modify_score >= debug_score {
+        // Tie-break in favor of Modify when scores are equal
+        Intent::Modify
+    } else if debug_score > 0 {
+        // At least one keyword matched, but tied — prefer Debug over BlastRadius
+        Intent::Debug
     } else {
         Intent::Explore
     }

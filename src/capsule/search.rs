@@ -38,13 +38,16 @@ const CODE_STOP_WORDS: &[&str] = &[
 ];
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct SearchResult {
     pub node_id: i64,
     pub file_id: i64,
+    #[allow(dead_code)]
     pub name: String,
+    #[allow(dead_code)]
     pub qualified_name: Option<String>,
+    #[allow(dead_code)]
     pub kind: String,
+    #[allow(dead_code)]
     pub file_path: String,
     pub score: f64,
 }

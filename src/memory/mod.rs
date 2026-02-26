@@ -184,19 +184,26 @@ impl MemoryService {
     }
 }
 
+fn truncate_to_char_boundary(s: &str, max_byte_pos: usize) -> &str {
+    if s.len() <= max_byte_pos {
+        return s;
+    }
+    match s.char_indices()
+        .take_while(|(i, _)| *i <= max_byte_pos)
+        .last()
+    {
+        Some((i, c)) => &s[..i + c.len_utf8()],
+        None => "",
+    }
+}
+
 fn generate_headline(content: &str) -> String {
     let first_line = content.lines().next().unwrap_or(content);
     if first_line.len() <= 80 {
         first_line.to_string()
     } else {
-        // Use char_indices to find a safe UTF-8 boundary
-        let end = first_line
-            .char_indices()
-            .map(|(i, _)| i)
-            .take_while(|&i| i <= 77)
-            .last()
-            .unwrap_or(0);
-        format!("{}...", &first_line[..end])
+        let truncated = truncate_to_char_boundary(first_line, 77);
+        format!("{truncated}...")
     }
 }
 
@@ -204,13 +211,8 @@ fn generate_summary(content: &str) -> String {
     if content.len() <= 200 {
         content.to_string()
     } else {
-        let end = content
-            .char_indices()
-            .map(|(i, _)| i)
-            .take_while(|&i| i <= 197)
-            .last()
-            .unwrap_or(0);
-        format!("{}...", &content[..end])
+        let truncated = truncate_to_char_boundary(content, 197);
+        format!("{truncated}...")
     }
 }
 
@@ -415,7 +417,7 @@ fn extract_symbol_candidates(content: &str) -> Vec<String> {
 
         if (is_pascal || is_snake_or_qualified)
             && !common.contains(cleaned)
-            && seen.insert(cleaned.to_string())
+            && seen.insert(cleaned)
         {
             candidates.push(cleaned.to_string());
         }

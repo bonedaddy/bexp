@@ -41,6 +41,7 @@ impl CapsuleCache {
     }
 
     /// Try to get a cached result. Returns None on miss or expired entry.
+    /// Proactively evicts expired entries when encountered.
     pub fn get(
         &self,
         query: &str,
@@ -61,6 +62,11 @@ impl CapsuleCache {
             crate::metrics::record_cache_hit();
             Some(entry.result.clone())
         } else {
+            // Entry expired — drop read lock and evict via write lock
+            drop(entries);
+            if let Ok(mut entries) = self.entries.write() {
+                entries.retain(|_, v| v.created_at.elapsed().as_secs() < self.ttl_secs);
+            }
             crate::metrics::record_cache_miss();
             None
         }

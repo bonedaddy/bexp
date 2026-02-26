@@ -4,8 +4,8 @@ use crate::error::Result;
 use crate::graph::GraphEngine;
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct MemorySearchResult {
+    #[allow(dead_code)]
     pub observation_id: i64,
     pub content: String,
     pub headline: Option<String>,
