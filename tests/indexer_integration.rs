@@ -57,7 +57,7 @@ fn full_index_populates_db_and_resolves_cross_file_call_edges() -> Result<()> {
     assert!(report.node_count >= 2);
     assert!(report.edge_count >= 1);
 
-    let reader = db.reader();
+    let reader = db.reader().unwrap();
     let stats = queries::get_index_stats(&reader)?;
     assert_eq!(stats.file_count, 2);
     assert_eq!(stats.node_count as usize, report.node_count);

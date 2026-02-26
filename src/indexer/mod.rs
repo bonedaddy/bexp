@@ -163,7 +163,7 @@ impl IndexerService {
         // Compute filesystem mtime hash and compare with stored value
         let fs_hash = self.compute_filesystem_mtime_hash()?;
         {
-            let reader = self.db.reader();
+            let reader = self.db.reader()?;
             if let Ok(Some(stored_hash)) = queries::get_metadata(&reader, "files_mtime_hash") {
                 if stored_hash == fs_hash {
                     tracing::info!(
@@ -187,7 +187,7 @@ impl IndexerService {
 
         // Load stored mtimes for per-file skip
         let stored_mtimes = {
-            let reader = self.db.reader();
+            let reader = self.db.reader()?;
             queries::get_all_file_mtimes(&reader).unwrap_or_default()
         };
 
@@ -238,7 +238,7 @@ impl IndexerService {
         let mut changed_file_ids = Vec::new();
 
         {
-            let mut conn = self.db.writer();
+            let mut conn = self.db.writer()?;
             let tx = conn.transaction().map_err(BexpError::Database)?;
 
             for (path, extracted) in &extracted {
@@ -270,11 +270,11 @@ impl IndexerService {
         let resolved = self.resolve_references()?;
         edge_count += resolved;
 
-        // Increment index generation to invalidate caches
-        let _ = queries::increment_index_generation(&self.db.writer());
-
-        // Store mtime hash so subsequent starts can skip indexing if nothing changed
-        let _ = queries::set_metadata(&self.db.writer(), "files_mtime_hash", &fs_hash);
+        // Increment index generation and store mtime hash
+        if let Ok(conn) = self.db.writer() {
+            let _ = queries::increment_index_generation(&conn);
+            let _ = queries::set_metadata(&conn, "files_mtime_hash", &fs_hash);
+        }
 
         tracing::info!(
             files = file_count,
@@ -342,7 +342,7 @@ impl IndexerService {
                 .unwrap_or(0);
 
             {
-                let reader = self.db.reader();
+                let reader = self.db.reader()?;
                 if let Ok(Some(file)) = queries::get_file_by_path(&reader, &rel_path) {
                     if file.mtime_ns == mtime_ns {
                         continue; // unchanged
@@ -367,7 +367,7 @@ impl IndexerService {
         // Phase 2: Write — single transaction for all deletions and inserts
         // Uses rusqlite Transaction for automatic rollback on error.
         if !deletions.is_empty() || !parsed_files.is_empty() {
-            let mut conn = self.db.writer();
+            let mut conn = self.db.writer()?;
             let tx = conn.transaction().map_err(BexpError::Database)?;
 
             for del in &deletions {
@@ -406,7 +406,9 @@ impl IndexerService {
 
         // Increment index generation to invalidate caches
         if file_count > 0 {
-            let _ = queries::increment_index_generation(&self.db.writer());
+            if let Ok(conn) = self.db.writer() {
+                let _ = queries::increment_index_generation(&conn);
+            }
         }
 
         Ok(IndexReport {
@@ -455,7 +457,7 @@ impl IndexerService {
     }
 
     fn resolve_references(&self) -> Result<usize> {
-        let conn = self.db.writer();
+        let conn = self.db.writer()?;
         let local = resolver::resolve_cross_file_refs(&conn)?;
 
         // After local resolution, try cross-workspace resolution

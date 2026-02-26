@@ -81,7 +81,7 @@ impl TestServerBuilder {
         if !self.files.is_empty() {
             indexer.full_index().expect("failed to full_index");
             graph
-                .build_from_db(&db.reader())
+                .build_from_db(&db.reader().unwrap())
                 .expect("failed to build graph");
         }
         indexer.set_index_ready(true);

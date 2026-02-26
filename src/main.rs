@@ -233,7 +233,10 @@ async fn serve(workspace_root: PathBuf, health_port_override: Option<u16>) -> an
                     "Initial index complete"
                 );
 
-                if let Err(e) = startup_graph.rebuild_from_db(&startup_db.reader()) {
+                if let Err(e) = startup_db
+                    .reader()
+                    .and_then(|r| startup_graph.rebuild_from_db(&r))
+                {
                     tracing::error!(error = %e, "Graph rebuild after initial index failed");
                 } else {
                     tracing::info!(

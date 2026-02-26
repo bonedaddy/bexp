@@ -31,7 +31,7 @@ impl Skeletonizer {
         let rel_path = file_path.to_string_lossy().to_string();
 
         {
-            let conn = self.db.reader();
+            let conn = self.db.reader()?;
             if let Ok(Some(file)) = queries::get_file_by_path(&conn, &rel_path) {
                 let cached = match level {
                     DetailLevel::Minimal => conn
@@ -83,7 +83,7 @@ impl Skeletonizer {
         // Cache it — use writer for both lookup and update to avoid TOCTOU
         // where the file row could be deleted by another writer between lookup and update.
         {
-            let conn = self.db.writer();
+            let conn = self.db.writer()?;
             if let Ok(Some(file)) = queries::get_file_by_path(&conn, &rel_path) {
                 let tokens = self.token_counter.count(&skeleton) as i64;
                 if let Err(e) =

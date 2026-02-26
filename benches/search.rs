@@ -84,7 +84,7 @@ fn setup_search_workspace() -> SearchBenchState {
     indexer.full_index().unwrap();
 
     let graph = Arc::new(GraphEngine::new());
-    graph.build_from_db(&db.reader()).unwrap();
+    graph.build_from_db(&db.reader().unwrap()).unwrap();
 
     let skeletonizer = Arc::new(Skeletonizer::new(db.clone()));
     let memory = Arc::new(MemoryService::new(db.clone(), graph.clone()));
@@ -103,7 +103,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
 
     c.bench_function("hybrid_search", |b| {
         b.iter(|| {
-            let conn = state.db.reader();
+            let conn = state.db.reader().unwrap();
             hybrid_search(&conn, &state.graph, "handle_request", &Intent::Explore, 20).unwrap();
         });
     });
@@ -114,7 +114,7 @@ fn bench_fts5_search(c: &mut Criterion) {
 
     c.bench_function("fts5_search", |b| {
         b.iter(|| {
-            let conn = state.db.reader();
+            let conn = state.db.reader().unwrap();
             search_nodes_fts(&conn, "handler process request", 20).unwrap();
         });
     });

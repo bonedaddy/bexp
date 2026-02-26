@@ -35,7 +35,7 @@ pub fn resolve_via_lsp(
         return Ok(0);
     }
 
-    let conn = db.writer();
+    let conn = db.writer()?;
 
     // Load unresolved refs with source node locations
     let refs = load_unresolved_refs(&conn)?;
@@ -156,7 +156,7 @@ pub fn resolve_via_lsp(
 
     // Rebuild graph with new edges
     if total_resolved > 0 {
-        let reader = db.reader();
+        let reader = db.reader()?;
         graph.rebuild_from_db(&reader)?;
     }
 

@@ -92,7 +92,7 @@ fn bench_graph_build(c: &mut Criterion) {
     c.bench_function("graph_build", |b| {
         b.iter(|| {
             let graph = GraphEngine::new();
-            graph.build_from_db(&state.db.reader()).unwrap();
+            graph.build_from_db(&state.db.reader().unwrap()).unwrap();
         });
     });
 }
@@ -103,7 +103,7 @@ fn bench_pagerank(c: &mut Criterion) {
     c.bench_function("pagerank", |b| {
         b.iter(|| {
             let graph = GraphEngine::new();
-            graph.rebuild_from_db(&state.db.reader()).unwrap();
+            graph.rebuild_from_db(&state.db.reader().unwrap()).unwrap();
         });
     });
 }
@@ -113,7 +113,7 @@ fn bench_impact_graph(c: &mut Criterion) {
 
     // Build the graph once; then benchmark impact_graph queries
     let graph = GraphEngine::new();
-    graph.build_from_db(&state.db.reader()).unwrap();
+    graph.build_from_db(&state.db.reader().unwrap()).unwrap();
 
     c.bench_function("impact_graph", |b| {
         b.iter(|| {
@@ -127,7 +127,7 @@ fn bench_find_paths(c: &mut Criterion) {
     let state = setup_graph_workspace();
 
     let graph = GraphEngine::new();
-    graph.build_from_db(&state.db.reader()).unwrap();
+    graph.build_from_db(&state.db.reader().unwrap()).unwrap();
 
     c.bench_function("find_paths", |b| {
         b.iter(|| {

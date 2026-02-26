@@ -29,7 +29,7 @@ impl MemoryService {
             include_previous = include_previous,
             "Loading session context"
         );
-        let conn = &*self.db.reader();
+        let conn = &*self.db.reader()?;
 
         let current_session = match session_id {
             Some(id) => session::get_session(conn, id)?,
@@ -103,7 +103,7 @@ impl MemoryService {
     }
 
     pub fn search(&self, query: &str, limit: usize, session_id: Option<&str>) -> Result<String> {
-        let conn = &*self.db.reader();
+        let conn = &*self.db.reader()?;
         let results = search::search_observations(conn, &self.graph, query, limit, session_id)?;
 
         if results.is_empty() {
@@ -138,7 +138,7 @@ impl MemoryService {
             content_len = content.len(),
             "Saving observation"
         );
-        let conn = self.db.writer();
+        let conn = self.db.writer()?;
 
         // Ensure session exists
         session::ensure_session(&conn, session_id)?;

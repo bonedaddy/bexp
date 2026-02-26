@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn resolver_picks_imported_file_candidate() {
         let db = setup_test_db();
-        let conn = db.writer();
+        let conn = db.writer().unwrap();
 
         let file_a = insert_test_file(&conn, "a.rs", "rust");
         let file_b = insert_test_file(&conn, "b.rs", "rust");
@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn resolver_type_ref_prefers_struct_over_function() {
         let db = setup_test_db();
-        let conn = db.writer();
+        let conn = db.writer().unwrap();
 
         let file_a = insert_test_file(&conn, "a.rs", "rust");
         let file_b = insert_test_file(&conn, "b.rs", "rust");
@@ -385,7 +385,7 @@ mod tests {
     #[test]
     fn resolver_single_candidate_no_import_accepted() {
         let db = setup_test_db();
-        let conn = db.writer();
+        let conn = db.writer().unwrap();
 
         let file_a = insert_test_file(&conn, "a.rs", "rust");
         let file_b = insert_test_file(&conn, "b.rs", "rust");
@@ -409,7 +409,7 @@ mod tests {
     #[test]
     fn resolver_rejects_ambiguous_name_only_match() {
         let db = setup_test_db();
-        let conn = db.writer();
+        let conn = db.writer().unwrap();
 
         let file_a = insert_test_file(&conn, "a.rs", "rust");
         let file_b = insert_test_file(&conn, "b.rs", "rust");

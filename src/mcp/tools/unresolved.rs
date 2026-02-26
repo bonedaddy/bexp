@@ -14,7 +14,7 @@ pub async fn handle(
         return Ok(result);
     }
 
-    let reader = server.db.reader();
+    let reader = server.db.reader().map_err(super::to_error_data)?;
     let results =
         queries::get_unresolved_refs_filtered(&reader, params.file_path.as_deref(), limit)
             .map_err(super::to_error_data)?;

@@ -74,7 +74,11 @@ impl CapsuleGenerator {
         tracing::debug!(intent = ?intent, "Detected intent");
 
         // Check cache (only for non-session queries since memory context varies)
-        let generation = match queries::get_index_generation(&self.db.reader()) {
+        let generation = match self
+            .db
+            .reader()
+            .and_then(|r| queries::get_index_generation(&r))
+        {
             Ok(g) => g,
             Err(e) => {
                 tracing::error!(error = %e, "Failed to read index generation; bypassing cache");
@@ -92,7 +96,7 @@ impl CapsuleGenerator {
         }
 
         // 2. Hybrid search for relevant nodes
-        let reader = self.db.reader();
+        let reader = self.db.reader()?;
         let search_results = search::hybrid_search(&reader, &self.graph, query, &intent, 50)?;
 
         tracing::debug!(

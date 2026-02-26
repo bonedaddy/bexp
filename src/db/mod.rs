@@ -105,21 +105,27 @@ impl Database {
         Ok(())
     }
 
-    pub fn writer(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.writer.lock().expect("writer lock poisoned")
+    pub fn writer(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
+        self.writer.lock().map_err(|_| BexpError::LockPoisoned {
+            component: "writer".into(),
+        })
     }
 
     /// Get a reader connection from the round-robin pool.
     /// Multiple concurrent callers will typically get different connections,
     /// enabling parallel read access.
-    pub fn reader(&self) -> std::sync::MutexGuard<'_, Connection> {
+    pub fn reader(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
         let idx = self.reader_idx.fetch_add(1, Ordering::Relaxed) % self.readers.len();
-        self.readers[idx].lock().expect("reader lock poisoned")
+        self.readers[idx]
+            .lock()
+            .map_err(|_| BexpError::LockPoisoned {
+                component: "reader".into(),
+            })
     }
 
     pub fn flush_wal(&self) -> Result<()> {
         tracing::debug!("Flushing WAL");
-        let conn = self.writer();
+        let conn = self.writer()?;
         conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
         tracing::debug!("WAL flush complete");
         Ok(())

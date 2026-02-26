@@ -79,6 +79,7 @@ fn extract_visibility(node: Node, source: &str) -> Option<String> {
 }
 
 /// Extract #[derive(...)] and #[cfg(...)] attributes from preceding attribute items.
+/// Uses AST child traversal on attribute_item nodes instead of string matching.
 fn extract_attributes(
     node: Node,
     source: &str,
@@ -91,43 +92,49 @@ fn extract_attributes(
     let mut current = node.prev_sibling();
     while let Some(prev) = current {
         if prev.kind() == "attribute_item" {
-            let text = get_node_text(prev, source);
+            // Find the `attribute` child node
+            if let Some(attr) = find_child_by_kind(prev, "attribute") {
+                // The attribute name is the identifier child of the attribute node
+                let attr_name =
+                    find_child_by_kind(attr, "identifier").map(|id| get_node_text(id, source));
 
-            // Parse derive macros: #[derive(Trait1, Trait2)]
-            if text.contains("derive") {
-                if let Some(args_start) = text.find("derive(") {
-                    let after = &text[args_start + 7..];
-                    if let Some(end) = after.find(')') {
-                        let traits_str = &after[..end];
-                        let derives: Vec<&str> = traits_str
-                            .split(',')
-                            .map(|s| s.trim())
-                            .filter(|s| !s.is_empty())
-                            .collect();
-
-                        for trait_name in &derives {
-                            unresolved_refs.push(UnresolvedRef {
-                                source_idx,
-                                target_name: trait_name.to_string(),
-                                target_qualified_name: None,
-                                edge_kind: EdgeKind::TypeRef,
-                                import_path: None,
-                                context: None,
-                            });
+                match attr_name {
+                    Some("derive") => {
+                        if let Some(token_tree) = find_child_by_kind(attr, "token_tree") {
+                            let mut derives = Vec::new();
+                            for i in 0..token_tree.child_count() {
+                                if let Some(child) = token_tree.child(i as u32) {
+                                    if child.kind() == "identifier" {
+                                        let name = get_node_text(child, source);
+                                        derives.push(name);
+                                        unresolved_refs.push(UnresolvedRef {
+                                            source_idx,
+                                            target_name: name.to_string(),
+                                            target_qualified_name: None,
+                                            edge_kind: EdgeKind::TypeRef,
+                                            import_path: None,
+                                            context: None,
+                                        });
+                                    }
+                                }
+                            }
+                            if !derives.is_empty() {
+                                metadata.insert("derive".to_string(), derives.join(", "));
+                            }
                         }
-
-                        metadata.insert("derive".to_string(), derives.join(", "));
                     }
-                }
-            }
-
-            // Parse cfg attributes: #[cfg(...)]
-            if text.contains("cfg(") {
-                if let Some(start) = text.find("cfg(") {
-                    let after = &text[start + 4..];
-                    if let Some(end) = after.rfind(')') {
-                        metadata.insert("cfg".to_string(), after[..end].to_string());
+                    Some("cfg") => {
+                        if let Some(token_tree) = find_child_by_kind(attr, "token_tree") {
+                            let text = get_node_text(token_tree, source);
+                            // Strip outer parens from token_tree text
+                            let inner = text
+                                .strip_prefix('(')
+                                .and_then(|s| s.strip_suffix(')'))
+                                .unwrap_or(text);
+                            metadata.insert("cfg".to_string(), inner.to_string());
+                        }
                     }
+                    _ => {}
                 }
             }
 
