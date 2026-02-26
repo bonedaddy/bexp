@@ -55,18 +55,18 @@ impl GraphEngine {
 
         let pagerank = centrality::compute_pagerank(&graph, 0.85, 20, 1e-6);
 
-        *self
-            .graph
-            .write()
-            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })? = graph;
+        *self.graph.write().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })? = graph;
         *self
             .id_to_index
             .write()
-            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })? = id_map;
-        *self
-            .pagerank
-            .write()
-            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })? = pagerank;
+            .map_err(|_| BexpError::LockPoisoned {
+                component: "graph".into(),
+            })? = id_map;
+        *self.pagerank.write().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })? = pagerank;
 
         crate::metrics::set_graph_stats(self.node_count(), self.edge_count());
 
@@ -108,10 +108,9 @@ impl GraphEngine {
         depth: usize,
         edge_kinds: Option<&[String]>,
     ) -> Result<String> {
-        let graph = self
-            .graph
-            .read()
-            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })?;
+        let graph = self.graph.read().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })?;
 
         // Find the node
         let node_idx = graph
@@ -143,10 +142,9 @@ impl GraphEngine {
     }
 
     pub fn find_paths(&self, from: &str, to: &str, max_depth: usize) -> Result<String> {
-        let graph = self
-            .graph
-            .read()
-            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })?;
+        let graph = self.graph.read().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })?;
 
         let from_idx = graph
             .node_indices()
@@ -329,14 +327,15 @@ impl GraphEngine {
             return self.build_from_db(conn);
         }
 
-        let mut graph = self
-            .graph
-            .write()
-            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })?;
+        let mut graph = self.graph.write().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })?;
         let mut id_map = self
             .id_to_index
             .write()
-            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })?;
+            .map_err(|_| BexpError::LockPoisoned {
+                component: "graph".into(),
+            })?;
 
         // Collect indices to remove: all nodes belonging to changed files
         let changed_file_set: HashSet<i64> = changed_file_ids.iter().copied().collect();
@@ -403,16 +402,14 @@ impl GraphEngine {
         drop(id_map);
 
         // Recompute PageRank (global property, must be full)
-        let graph_ref = self
-            .graph
-            .read()
-            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })?;
+        let graph_ref = self.graph.read().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })?;
         let pagerank = centrality::compute_pagerank(&graph_ref, 0.85, 20, 1e-6);
         drop(graph_ref);
-        *self
-            .pagerank
-            .write()
-            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })? = pagerank;
+        *self.pagerank.write().map_err(|_| BexpError::LockPoisoned {
+            component: "graph".into(),
+        })? = pagerank;
 
         tracing::info!(
             removed = indices_to_remove.len(),

@@ -50,7 +50,11 @@ impl CapsuleGenerator {
         session_id: Option<&str>,
         intent_override: Option<&str>,
     ) -> Result<String> {
-        tracing::debug!(query = query, token_budget = token_budget, "Generating capsule");
+        tracing::debug!(
+            query = query,
+            token_budget = token_budget,
+            "Generating capsule"
+        );
         // 1. Detect intent (or use override)
         let intent = if let Some(name) = intent_override {
             match name {
@@ -81,7 +85,10 @@ impl CapsuleGenerator {
         let reader = self.db.reader();
         let search_results = search::hybrid_search(&reader, &self.graph, query, &intent, 50)?;
 
-        tracing::debug!(search_results = search_results.len(), "Hybrid search complete");
+        tracing::debug!(
+            search_results = search_results.len(),
+            "Hybrid search complete"
+        );
 
         if search_results.is_empty() {
             return Ok("No relevant code found for the given query.".to_string());

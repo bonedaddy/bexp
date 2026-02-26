@@ -6,8 +6,7 @@ use crate::mcp::server::BexpServer;
 pub async fn handle(server: &BexpServer) -> Result<CallToolResult, ErrorData> {
     let stats = {
         let reader = server.db.reader();
-        queries::get_index_stats(&reader)
-            .map_err(super::to_error_data)?
+        queries::get_index_stats(&reader).map_err(super::to_error_data)?
     };
 
     let watcher_active = server.indexer.watcher_active();

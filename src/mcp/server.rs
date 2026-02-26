@@ -451,10 +451,8 @@ impl BexpServer {
         description = "Detect and mark stale observations whose linked files have changed. Also cleans up observations past the TTL."
     )]
     async fn detect_staleness(&self) -> Result<CallToolResult, ErrorData> {
-        super::tools::with_metrics("detect_staleness", || {
-            super::tools::staleness::handle(self)
-        })
-        .await
+        super::tools::with_metrics("detect_staleness", || super::tools::staleness::handle(self))
+            .await
     }
 
     #[tool(

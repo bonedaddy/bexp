@@ -301,7 +301,10 @@ fn auto_link_observation(conn: &rusqlite::Connection, obs_id: i64, content: &str
     // 1. PascalCase identifiers (3+ chars, starts with uppercase)
     // 2. Identifiers containing _ or :: (3+ chars)
     let candidates = extract_symbol_candidates(content);
-    tracing::debug!(candidate_count = candidates.len(), "Auto-linking observation symbols");
+    tracing::debug!(
+        candidate_count = candidates.len(),
+        "Auto-linking observation symbols"
+    );
 
     // Auto-link symbols (up to 10)
     for candidate in candidates.iter().take(30) {

@@ -35,10 +35,7 @@ pub fn to_error_data(e: impl std::fmt::Display) -> ErrorData {
 }
 
 /// Wrap a tool handler with metrics recording.
-pub async fn with_metrics<F, Fut>(
-    tool_name: &str,
-    handler: F,
-) -> Result<CallToolResult, ErrorData>
+pub async fn with_metrics<F, Fut>(tool_name: &str, handler: F) -> Result<CallToolResult, ErrorData>
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<CallToolResult, ErrorData>>,

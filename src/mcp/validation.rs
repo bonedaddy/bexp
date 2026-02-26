@@ -68,10 +68,7 @@ pub fn validate_direction(direction: &str) -> Result<(), ErrorData> {
 
 pub fn validate_content(content: &str) -> Result<(), ErrorData> {
     if content.is_empty() {
-        return Err(ErrorData::invalid_params(
-            "content must not be empty",
-            None,
-        ));
+        return Err(ErrorData::invalid_params("content must not be empty", None));
     }
     if content.len() > MAX_CONTENT_LENGTH {
         return Err(ErrorData::invalid_params(

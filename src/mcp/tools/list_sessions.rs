@@ -11,8 +11,8 @@ pub async fn handle(
     let limit = validation::validate_limit(params.limit, 20)?;
 
     let reader = server.db.reader();
-    let results = queries::list_sessions_with_counts(&reader, limit)
-        .map_err(super::to_error_data)?;
+    let results =
+        queries::list_sessions_with_counts(&reader, limit).map_err(super::to_error_data)?;
 
     if results.is_empty() {
         return Ok(CallToolResult::success(vec![Content::text(

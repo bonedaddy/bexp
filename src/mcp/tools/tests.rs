@@ -27,14 +27,20 @@ fn consumer() {
 }
 ";
 
-fn server_with_rust_files() -> (super::super::server::BexpServer, crate::mcp::test_helpers::TempWorkspace) {
+fn server_with_rust_files() -> (
+    super::super::server::BexpServer,
+    crate::mcp::test_helpers::TempWorkspace,
+) {
     TestServerBuilder::new()
         .with_file("lib.rs", RUST_SOURCE)
         .with_file("consumer.rs", RUST_SOURCE_2)
         .build()
 }
 
-fn empty_server() -> (super::super::server::BexpServer, crate::mcp::test_helpers::TempWorkspace) {
+fn empty_server() -> (
+    super::super::server::BexpServer,
+    crate::mcp::test_helpers::TempWorkspace,
+) {
     TestServerBuilder::new().build()
 }
 
@@ -50,7 +56,11 @@ async fn capsule_with_valid_query_returns_success() {
         intent: None,
     };
     let result = super::capsule::handle(&server, params).await;
-    assert!(result.is_ok(), "capsule handle should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "capsule handle should succeed: {:?}",
+        result.err()
+    );
 }
 
 #[tokio::test]
@@ -91,7 +101,11 @@ async fn impact_with_known_symbol() {
         edge_kinds: None,
     };
     let result = super::impact::handle(&server, params).await;
-    assert!(result.is_ok(), "impact handle should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "impact handle should succeed: {:?}",
+        result.err()
+    );
 }
 
 #[tokio::test]
@@ -117,7 +131,10 @@ async fn impact_with_empty_symbol() {
         edge_kinds: None,
     };
     let result = super::impact::handle(&server, params).await;
-    assert!(result.is_err(), "empty symbol should return validation error");
+    assert!(
+        result.is_err(),
+        "empty symbol should return validation error"
+    );
 }
 
 #[tokio::test]
@@ -144,7 +161,11 @@ async fn flow_between_symbols() {
         max_depth: Some(5),
     };
     let result = super::flow::handle(&server, params).await;
-    assert!(result.is_ok(), "flow handle should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "flow handle should succeed: {:?}",
+        result.err()
+    );
 }
 
 #[tokio::test]
@@ -339,7 +360,11 @@ async fn save_observation_stores_content() {
         files: None,
     };
     let result = super::observe::handle(&server, params).await;
-    assert!(result.is_ok(), "save_observation should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "save_observation should succeed: {:?}",
+        result.err()
+    );
 }
 
 #[tokio::test]
@@ -352,7 +377,10 @@ async fn save_observation_with_empty_content_fails() {
         files: None,
     };
     let result = super::observe::handle(&server, params).await;
-    assert!(result.is_err(), "empty content should return validation error");
+    assert!(
+        result.is_err(),
+        "empty content should return validation error"
+    );
 }
 
 #[tokio::test]
@@ -381,7 +409,9 @@ async fn search_memory_returns_results() {
         symbols: Some(vec!["alpha".to_string()]),
         files: None,
     };
-    super::observe::handle(&server, observe_params).await.unwrap();
+    super::observe::handle(&server, observe_params)
+        .await
+        .unwrap();
 
     // Then search for it
     let params = MemorySearchParams {
@@ -418,7 +448,9 @@ async fn get_session_context_returns_data() {
         symbols: None,
         files: None,
     };
-    super::observe::handle(&server, observe_params).await.unwrap();
+    super::observe::handle(&server, observe_params)
+        .await
+        .unwrap();
 
     let params = SessionParams {
         session_id: Some("ctx-test-session".to_string()),
@@ -454,7 +486,9 @@ async fn list_sessions_returns_list() {
         symbols: None,
         files: None,
     };
-    super::observe::handle(&server, observe_params).await.unwrap();
+    super::observe::handle(&server, observe_params)
+        .await
+        .unwrap();
 
     let params = ListSessionsParams { limit: Some(10) };
     let result = super::list_sessions::handle(&server, params).await;
@@ -541,7 +575,11 @@ async fn get_skeleton_returns_content() {
         level: Some("standard".to_string()),
     };
     let result = super::skeleton::handle(&server, params).await;
-    assert!(result.is_ok(), "skeleton should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "skeleton should succeed: {:?}",
+        result.err()
+    );
 }
 
 #[tokio::test]
@@ -576,7 +614,11 @@ async fn trigger_reindex_full() {
         full: Some(true),
     };
     let result = super::reindex::handle(&server, params).await;
-    assert!(result.is_ok(), "full reindex should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "full reindex should succeed: {:?}",
+        result.err()
+    );
 }
 
 #[tokio::test]
@@ -600,7 +642,11 @@ async fn graph_stats_returns_stats() {
         kind: None,
     };
     let result = super::graph_stats::handle(&server, params).await;
-    assert!(result.is_ok(), "graph_stats should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "graph_stats should succeed: {:?}",
+        result.err()
+    );
 }
 
 #[tokio::test]
@@ -631,7 +677,11 @@ async fn graph_stats_empty_workspace() {
 async fn get_config_returns_configuration() {
     let (server, _ws) = empty_server();
     let result = super::get_config::handle(&server).await;
-    assert!(result.is_ok(), "get_config should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "get_config should succeed: {:?}",
+        result.err()
+    );
 }
 
 // ─── Setup tests ───
@@ -639,11 +689,13 @@ async fn get_config_returns_configuration() {
 #[tokio::test]
 async fn workspace_setup_creates_config_files() {
     let (server, _ws) = empty_server();
-    let params = SetupParams {
-        force: Some(true),
-    };
+    let params = SetupParams { force: Some(true) };
     let result = super::setup::handle(&server, params).await;
-    assert!(result.is_ok(), "workspace_setup should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "workspace_setup should succeed: {:?}",
+        result.err()
+    );
 
     // Verify files were created
     assert!(_ws.path().join(".bexp/config.toml").exists());
@@ -670,7 +722,11 @@ async fn workspace_setup_no_force_existing() {
 async fn detect_staleness_runs_without_error() {
     let (server, _ws) = server_with_rust_files();
     let result = super::staleness::handle(&server).await;
-    assert!(result.is_ok(), "staleness should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "staleness should succeed: {:?}",
+        result.err()
+    );
 }
 
 // ─── LSP edges tests ───
@@ -678,9 +734,7 @@ async fn detect_staleness_runs_without_error() {
 #[tokio::test]
 async fn submit_lsp_edges_with_empty_list() {
     let (server, _ws) = server_with_rust_files();
-    let params = LspEdgesParams {
-        edges: vec![],
-    };
+    let params = LspEdgesParams { edges: vec![] };
     let result = super::lsp::handle(&server, params).await;
     assert!(result.is_ok());
 }
@@ -696,7 +750,10 @@ async fn submit_lsp_edges_with_unresolved_symbols() {
         }],
     };
     let result = super::lsp::handle(&server, params).await;
-    assert!(result.is_ok(), "unresolved symbols should be skipped, not error");
+    assert!(
+        result.is_ok(),
+        "unresolved symbols should be skipped, not error"
+    );
 }
 
 // ─── Unresolved refs tests ───

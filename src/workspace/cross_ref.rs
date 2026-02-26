@@ -96,10 +96,7 @@ pub fn resolve_cross_workspace(conn: &Connection, config: &BexpConfig) -> Result
         total += resolved_for_ws;
     }
 
-    tracing::info!(
-        edges = total,
-        "Cross-workspace resolution complete"
-    );
+    tracing::info!(edges = total, "Cross-workspace resolution complete");
     Ok(total)
 }
 

@@ -74,8 +74,9 @@ impl Skeletonizer {
             .map_err(|e| BexpError::Skeleton(format!("Cannot read file: {e}")))?;
 
         let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let lang = Language::from_extension(ext)
-            .ok_or_else(|| BexpError::UnsupportedLanguage { extension: ext.to_string() })?;
+        let lang = Language::from_extension(ext).ok_or_else(|| BexpError::UnsupportedLanguage {
+            extension: ext.to_string(),
+        })?;
 
         let skeleton = SkeletonTransformer::transform(&source, lang, level)?;
 

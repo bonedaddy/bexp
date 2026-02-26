@@ -17,10 +17,7 @@ pub async fn handle(
                 .incremental_reindex(&paths)
                 .map_err(super::to_error_data)?
         }
-        _ => server
-            .indexer
-            .full_index()
-            .map_err(super::to_error_data)?,
+        _ => server.indexer.full_index().map_err(super::to_error_data)?,
     };
 
     // Rebuild graph after indexing

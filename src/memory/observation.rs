@@ -22,7 +22,11 @@ pub fn insert_observation(
     headline: Option<&str>,
     summary: Option<&str>,
 ) -> Result<i64> {
-    tracing::debug!(session_id = session_id, content_len = content.len(), "Inserting observation");
+    tracing::debug!(
+        session_id = session_id,
+        content_len = content.len(),
+        "Inserting observation"
+    );
     conn.execute(
         "INSERT INTO observations (session_id, content, headline, summary)
          VALUES (?1, ?2, ?3, ?4)",
@@ -66,7 +70,11 @@ pub fn get_observations_for_session(
 }
 
 pub fn link_observation_symbol(conn: &Connection, observation_id: i64, node_id: i64) -> Result<()> {
-    tracing::trace!(observation_id = observation_id, node_id = node_id, "Linking observation to symbol");
+    tracing::trace!(
+        observation_id = observation_id,
+        node_id = node_id,
+        "Linking observation to symbol"
+    );
     conn.execute(
         "INSERT OR IGNORE INTO observation_symbols (observation_id, node_id)
          VALUES (?1, ?2)",
@@ -81,7 +89,11 @@ pub fn link_observation_file(
     file_id: i64,
     content_hash: &str,
 ) -> Result<()> {
-    tracing::trace!(observation_id = observation_id, file_id = file_id, "Linking observation to file");
+    tracing::trace!(
+        observation_id = observation_id,
+        file_id = file_id,
+        "Linking observation to file"
+    );
     conn.execute(
         "INSERT OR IGNORE INTO observation_files (observation_id, file_id, content_hash_at_link)
          VALUES (?1, ?2, ?3)",
