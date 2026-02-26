@@ -1,16 +1,17 @@
 use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::mcp::server::{BexpServer, GraphStatsParams};
+use crate::mcp::validation;
 
 pub async fn handle(
     server: &BexpServer,
     params: GraphStatsParams,
 ) -> Result<CallToolResult, ErrorData> {
+    let top_n = validation::validate_limit(params.top_n, 20)?;
+
     if let Some(result) = super::wait_for_index(&server.indexer).await {
         return Ok(result);
     }
-
-    let top_n = params.top_n.unwrap_or(20);
 
     let node_count = server.graph.node_count();
     let edge_count = server.graph.edge_count();

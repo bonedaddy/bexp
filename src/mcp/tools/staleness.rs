@@ -11,11 +11,11 @@ pub async fn handle(server: &BexpServer) -> Result<CallToolResult, ErrorData> {
     let conn = server.db.writer();
 
     let stale_count = observation::detect_staleness(&conn)
-        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        .map_err(super::to_error_data)?;
 
     let cleanup_count =
         observation::cleanup_old_observations(&conn, server.config.observation_ttl_days)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+            .map_err(super::to_error_data)?;
 
     let output = format!(
         "# Staleness Detection\n\n- **Newly stale:** {} observations marked\n- **Cleaned up:** {} observations past {}-day TTL",

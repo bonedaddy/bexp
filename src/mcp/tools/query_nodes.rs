@@ -2,16 +2,17 @@ use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::db::queries;
 use crate::mcp::server::{BexpServer, QueryNodesParams};
+use crate::mcp::validation;
 
 pub async fn handle(
     server: &BexpServer,
     params: QueryNodesParams,
 ) -> Result<CallToolResult, ErrorData> {
+    let limit = validation::validate_limit(params.limit, 50)?;
+
     if let Some(result) = super::wait_for_index(&server.indexer).await {
         return Ok(result);
     }
-
-    let limit = params.limit.unwrap_or(50);
     let exported_only = params.exported_only.unwrap_or(false);
     let include_pagerank = params.include_pagerank.unwrap_or(false);
 
@@ -25,7 +26,7 @@ pub async fn handle(
         exported_only,
         limit,
     )
-    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+    .map_err(super::to_error_data)?;
 
     if results.is_empty() {
         return Ok(CallToolResult::success(vec![Content::text(

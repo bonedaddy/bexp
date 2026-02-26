@@ -22,7 +22,7 @@ pub async fn handle(
     let result = server
         .skeletonizer
         .skeletonize(&file_path, level)
-        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        .map_err(super::to_error_data)?;
 
     Ok(CallToolResult::success(vec![Content::text(result)]))
 }

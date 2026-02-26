@@ -11,10 +11,12 @@ mod db;
 mod error;
 mod git;
 mod graph;
+mod health;
 mod indexer;
 mod lsp;
 mod mcp;
 mod memory;
+mod metrics;
 mod skeleton;
 mod types;
 mod workspace;
@@ -45,6 +47,10 @@ enum Commands {
         /// Workspace root directory (default: current directory)
         #[arg(short, long)]
         workspace: Option<PathBuf>,
+
+        /// Port for health/metrics HTTP endpoint (optional)
+        #[arg(long)]
+        health_port: Option<u16>,
     },
     /// Index the workspace
     Index {
@@ -77,10 +83,13 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Serve { workspace } => {
+        Commands::Serve {
+            workspace,
+            health_port,
+        } => {
             let workspace_root =
                 workspace.unwrap_or_else(|| std::env::current_dir().expect("Cannot get cwd"));
-            serve(workspace_root).await?;
+            serve(workspace_root, health_port).await?;
         }
         Commands::Index { workspace } => {
             let workspace_root =
@@ -119,11 +128,25 @@ fn index_workspace(workspace_root: &std::path::Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn serve(workspace_root: PathBuf) -> anyhow::Result<()> {
-    tracing::info!("Starting bexp server for {}", workspace_root.display());
+async fn serve(workspace_root: PathBuf, health_port_override: Option<u16>) -> anyhow::Result<()> {
+    tracing::info!(workspace = %workspace_root.display(), "Starting bexp server");
 
-    let config = Arc::new(BexpConfig::load(&workspace_root)?);
-    let db = Arc::new(Database::open(&config.db_path(&workspace_root))?);
+    let mut config = BexpConfig::load(&workspace_root)?;
+    // CLI --health-port overrides config file
+    if health_port_override.is_some() {
+        config.health_port = health_port_override;
+    }
+    let config = Arc::new(config);
+
+    // Install Prometheus metrics recorder
+    let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
+    let prometheus_handle = recorder.handle();
+    let _ = ::metrics::set_global_recorder(recorder);
+
+    let db = Arc::new(Database::open_with_pool_size(
+        &config.db_path(&workspace_root),
+        config.reader_pool_size,
+    )?);
 
     // Build services
     let graph = Arc::new(GraphEngine::new());
@@ -154,7 +177,7 @@ async fn serve(workspace_root: PathBuf) -> anyhow::Result<()> {
     if _watcher.is_ok() {
         tracing::info!("File watcher started");
     } else {
-        tracing::warn!("File watcher failed to start: {:?}", _watcher.err());
+        tracing::warn!(error = ?_watcher.err(), "File watcher failed to start");
     }
 
     // Run initial index asynchronously so MCP clients can connect immediately.
@@ -169,19 +192,19 @@ async fn serve(workspace_root: PathBuf) -> anyhow::Result<()> {
         match startup_indexer.full_index() {
             Ok(report) => {
                 tracing::info!(
-                    "Initial index complete: {} files, {} nodes, {} edges",
-                    report.file_count,
-                    report.node_count,
-                    report.edge_count
+                    files = report.file_count,
+                    nodes = report.node_count,
+                    edges = report.edge_count,
+                    "Initial index complete"
                 );
 
                 if let Err(e) = startup_graph.rebuild_from_db(&startup_db.reader()) {
-                    tracing::error!("Graph rebuild after initial index failed: {}", e);
+                    tracing::error!(error = %e, "Graph rebuild after initial index failed");
                 } else {
                     tracing::info!(
-                        "Graph loaded: {} nodes, {} edges",
-                        startup_graph.node_count(),
-                        startup_graph.edge_count()
+                        nodes = startup_graph.node_count(),
+                        edges = startup_graph.edge_count(),
+                        "Graph loaded"
                     );
                 }
 
@@ -198,17 +221,17 @@ async fn serve(workspace_root: PathBuf) -> anyhow::Result<()> {
                     ) {
                         Ok(resolved) => {
                             if resolved > 0 {
-                                tracing::info!("LSP resolution: {} edges created", resolved);
+                                tracing::info!(edges = resolved, "LSP resolution complete");
                             }
                         }
                         Err(e) => {
-                            tracing::warn!("LSP resolution failed: {}", e);
+                            tracing::warn!(error = %e, "LSP resolution failed");
                         }
                     }
                 }
             }
             Err(e) => {
-                tracing::error!("Initial index failed: {}", e);
+                tracing::error!(error = %e, "Initial index failed");
                 // Mark ready even on failure so tools don't hang forever
                 startup_indexer.set_index_ready(true);
             }
@@ -227,13 +250,75 @@ async fn serve(workspace_root: PathBuf) -> anyhow::Result<()> {
         workspace_root,
     );
 
+    // Start health/metrics server if configured
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    if let Some(port) = config.health_port {
+        let health_indexer = indexer.clone();
+        let health_handle = prometheus_handle.clone();
+        tokio::spawn(health::run_health_server(
+            port,
+            health_indexer,
+            health_handle,
+            shutdown_rx,
+        ));
+    } else {
+        drop(shutdown_rx);
+    }
+
     tracing::info!("Starting MCP stdio server...");
     let service = server.serve(stdio()).await?;
-    service.waiting().await?;
 
-    // Cleanup
-    tracing::info!("Server shutting down, flushing WAL...");
-    db.flush_wal()?;
+    // Graceful shutdown: wait for transport close, SIGINT, or SIGTERM
+    let shutdown_reason = {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{signal, SignalKind};
+            let mut sigterm =
+                signal(SignalKind::terminate()).expect("failed to register SIGTERM handler");
+            tokio::select! {
+                result = service.waiting() => {
+                    if let Err(e) = result {
+                        tracing::warn!(error = %e, "MCP transport error");
+                    }
+                    "transport_close"
+                }
+                _ = tokio::signal::ctrl_c() => { "SIGINT" }
+                _ = sigterm.recv() => { "SIGTERM" }
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            tokio::select! {
+                result = service.waiting() => {
+                    if let Err(e) = result {
+                        tracing::warn!(error = %e, "MCP transport error");
+                    }
+                    "transport_close"
+                }
+                _ = tokio::signal::ctrl_c() => { "SIGINT" }
+            }
+        }
+    };
+
+    tracing::info!(reason = shutdown_reason, "Shutdown initiated");
+
+    // Drain period: let in-flight handlers finish
+    if config.shutdown_drain_secs > 0 {
+        tracing::info!(
+            drain_secs = config.shutdown_drain_secs,
+            "Draining in-flight requests"
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(config.shutdown_drain_secs)).await;
+    }
+
+    // Signal health server to stop
+    let _ = shutdown_tx.send(true);
+
+    // Flush WAL on all shutdown paths
+    tracing::info!("Flushing WAL...");
+    if let Err(e) = db.flush_wal() {
+        tracing::error!(error = %e, "WAL flush failed");
+    }
 
     Ok(())
 }

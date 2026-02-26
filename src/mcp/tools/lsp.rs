@@ -46,7 +46,7 @@ pub async fn handle(
         server
             .graph
             .rebuild_from_db(&reader)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+            .map_err(super::to_error_data)?;
     }
 
     Ok(CallToolResult::success(vec![Content::text(format!(

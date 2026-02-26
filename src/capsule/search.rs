@@ -68,8 +68,8 @@ pub fn hybrid_search(
     //    file paths, and signatures
     let fts_results = if fts_results.is_empty() {
         tracing::debug!(
-            "FTS5 returned no results for '{}', falling back to LIKE search",
-            query
+            query = query,
+            "FTS5 returned no results, falling back to LIKE search"
         );
         fallback_like_search(conn, query, limit * 2)?
     } else {
@@ -188,19 +188,25 @@ fn fallback_like_search(conn: &Connection, query: &str, limit: usize) -> Result<
             let id: i64 = row.get(0)?;
             Ok((id, 1.0_f64)) // Uniform score for LIKE results
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| match r {
+            Ok(v) => Some(v),
+            Err(e) => {
+                tracing::trace!(error = %e, "Skipping row due to error");
+                None
+            }
+        })
         .collect::<Vec<_>>();
 
     if rows.is_empty() {
         tracing::debug!(
-            "LIKE fallback also returned no results for terms: {:?}",
-            terms
+            terms = ?terms,
+            "LIKE fallback also returned no results"
         );
     } else {
         tracing::debug!(
-            "LIKE fallback found {} results for terms: {:?}",
-            rows.len(),
-            terms
+            count = rows.len(),
+            terms = ?terms,
+            "LIKE fallback found results"
         );
     }
 

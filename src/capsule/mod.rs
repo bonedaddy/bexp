@@ -32,13 +32,14 @@ impl CapsuleGenerator {
         skeletonizer: Arc<Skeletonizer>,
         memory: Arc<MemoryService>,
     ) -> Self {
+        let cache = CapsuleCache::new(config.capsule_cache_size, config.capsule_cache_ttl_secs);
         Self {
             db,
             config,
             graph,
             skeletonizer,
             memory,
-            cache: CapsuleCache::new(),
+            cache,
         }
     }
 
@@ -49,6 +50,7 @@ impl CapsuleGenerator {
         session_id: Option<&str>,
         intent_override: Option<&str>,
     ) -> Result<String> {
+        tracing::debug!(query = query, token_budget = token_budget, "Generating capsule");
         // 1. Detect intent (or use override)
         let intent = if let Some(name) = intent_override {
             match name {
@@ -61,7 +63,7 @@ impl CapsuleGenerator {
         } else {
             intent::detect_intent(query)
         };
-        tracing::debug!("Detected intent: {:?}", intent);
+        tracing::debug!(intent = ?intent, "Detected intent");
 
         // Check cache (only for non-session queries since memory context varies)
         let generation = queries::get_index_generation(&self.db.reader()).unwrap_or(0);
@@ -70,7 +72,7 @@ impl CapsuleGenerator {
                 .cache
                 .get(query, token_budget, intent.as_str(), generation)
             {
-                tracing::debug!("Cache hit for query: {}", query);
+                tracing::debug!(query = query, "Cache hit for capsule query");
                 return Ok(cached);
             }
         }
@@ -78,6 +80,8 @@ impl CapsuleGenerator {
         // 2. Hybrid search for relevant nodes
         let reader = self.db.reader();
         let search_results = search::hybrid_search(&reader, &self.graph, query, &intent, 50)?;
+
+        tracing::debug!(search_results = search_results.len(), "Hybrid search complete");
 
         if search_results.is_empty() {
             return Ok("No relevant code found for the given query.".to_string());
@@ -96,6 +100,14 @@ impl CapsuleGenerator {
             self.config.default_skeleton_level,
             Some(&self.graph),
         )?;
+
+        tracing::debug!(
+            pivots = allocation.pivots.len(),
+            bridges = allocation.bridges.len(),
+            skeletons = allocation.skeletons.len(),
+            total_tokens = allocation.total_tokens,
+            "Budget allocation complete"
+        );
 
         // 5. Assemble capsule
         let mut output = generator::assemble_capsule(&reader, &allocation, query, &intent)?;

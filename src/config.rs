@@ -49,6 +49,21 @@ pub struct BexpConfig {
 
     #[serde(default)]
     pub workspace_group: Vec<String>,
+
+    #[serde(default = "default_reader_pool_size")]
+    pub reader_pool_size: usize,
+
+    #[serde(default = "default_capsule_cache_size")]
+    pub capsule_cache_size: usize,
+
+    #[serde(default = "default_capsule_cache_ttl_secs")]
+    pub capsule_cache_ttl_secs: u64,
+
+    #[serde(default)]
+    pub health_port: Option<u16>,
+
+    #[serde(default = "default_shutdown_drain_secs")]
+    pub shutdown_drain_secs: u64,
 }
 
 fn default_token_budget() -> usize {
@@ -75,6 +90,18 @@ fn default_session_compress_after_hours() -> u64 {
 fn default_observation_ttl_days() -> u64 {
     90
 }
+fn default_reader_pool_size() -> usize {
+    4
+}
+fn default_capsule_cache_size() -> usize {
+    100
+}
+fn default_capsule_cache_ttl_secs() -> u64 {
+    300
+}
+fn default_shutdown_drain_secs() -> u64 {
+    5
+}
 
 impl Default for BexpConfig {
     fn default() -> Self {
@@ -91,6 +118,11 @@ impl Default for BexpConfig {
             lsp_resolution: false,
             lsp_servers: HashMap::new(),
             workspace_group: Vec::new(),
+            reader_pool_size: default_reader_pool_size(),
+            capsule_cache_size: default_capsule_cache_size(),
+            capsule_cache_ttl_secs: default_capsule_cache_ttl_secs(),
+            health_port: None,
+            shutdown_drain_secs: default_shutdown_drain_secs(),
         }
     }
 }

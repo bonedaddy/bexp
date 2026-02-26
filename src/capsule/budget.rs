@@ -95,6 +95,14 @@ pub fn allocate(
     let mut bridge_remaining = bridge_budget;
     let mut skeleton_remaining = skeleton_budget;
 
+    tracing::debug!(
+        total_budget = budget,
+        pivot_budget = pivot_budget,
+        bridge_budget = bridge_budget,
+        skeleton_budget = skeleton_budget,
+        "Budget allocation starting"
+    );
+
     // Collect all result node IDs and their scores
     let node_ids: Vec<i64> = search_results.iter().map(|r| r.node_id).collect();
 
@@ -220,6 +228,12 @@ pub fn allocate(
         }
     }
 
+    tracing::debug!(
+        pivot_count = allocation.pivots.len(),
+        tokens_used = pivot_budget - pivot_remaining,
+        "Pivot allocation complete"
+    );
+
     // Phase 3B: Bridge excerpts from graph neighbors
     if let Some(graph) = graph {
         let pivot_node_ids: HashSet<i64> = included_node_ids.clone();
@@ -247,6 +261,12 @@ pub fn allocate(
             }
         }
     }
+
+    tracing::debug!(
+        bridge_count = allocation.bridges.len(),
+        tokens_used = bridge_budget - bridge_remaining,
+        "Bridge allocation complete"
+    );
 
     // Skeleton files: remaining files from search results not already included
     let max_score = search_results.first().map(|r| r.score).unwrap_or(1.0);
@@ -333,6 +353,12 @@ pub fn allocate(
             level,
         });
     }
+
+    tracing::debug!(
+        skeleton_count = allocation.skeletons.len(),
+        tokens_used = skeleton_budget - skeleton_remaining,
+        "Skeleton allocation complete"
+    );
 
     allocation.total_tokens = (pivot_budget - pivot_remaining)
         + (bridge_budget - bridge_remaining)

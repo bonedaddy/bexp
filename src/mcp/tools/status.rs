@@ -7,7 +7,7 @@ pub async fn handle(server: &BexpServer) -> Result<CallToolResult, ErrorData> {
     let stats = {
         let reader = server.db.reader();
         queries::get_index_stats(&reader)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
+            .map_err(super::to_error_data)?
     };
 
     let watcher_active = server.indexer.watcher_active();

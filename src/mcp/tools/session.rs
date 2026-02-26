@@ -16,7 +16,7 @@ pub async fn handle(
             include_previous,
             previous_limit,
         )
-        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        .map_err(super::to_error_data)?;
 
     Ok(CallToolResult::success(vec![Content::text(result)]))
 }

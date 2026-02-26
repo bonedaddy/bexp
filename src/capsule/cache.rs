@@ -16,23 +16,27 @@ struct CacheEntry {
     created_at: Instant,
 }
 
-const MAX_ENTRIES: usize = 100;
-const TTL_SECS: u64 = 300; // 5 minutes
+const DEFAULT_MAX_ENTRIES: usize = 100;
+const DEFAULT_TTL_SECS: u64 = 300; // 5 minutes
 
 pub struct CapsuleCache {
     entries: RwLock<HashMap<CacheKey, CacheEntry>>,
+    max_entries: usize,
+    ttl_secs: u64,
 }
 
 impl Default for CapsuleCache {
     fn default() -> Self {
-        Self::new()
+        Self::new(DEFAULT_MAX_ENTRIES, DEFAULT_TTL_SECS)
     }
 }
 
 impl CapsuleCache {
-    pub fn new() -> Self {
+    pub fn new(max_entries: usize, ttl_secs: u64) -> Self {
         Self {
             entries: RwLock::new(HashMap::new()),
+            max_entries,
+            ttl_secs,
         }
     }
 
@@ -46,10 +50,18 @@ impl CapsuleCache {
     ) -> Option<String> {
         let key = Self::make_key(query, token_budget, intent, index_generation);
         let entries = self.entries.read().ok()?;
-        let entry = entries.get(&key)?;
-        if entry.created_at.elapsed().as_secs() < TTL_SECS {
+        let entry = match entries.get(&key) {
+            Some(e) => e,
+            None => {
+                crate::metrics::record_cache_miss();
+                return None;
+            }
+        };
+        if entry.created_at.elapsed().as_secs() < self.ttl_secs {
+            crate::metrics::record_cache_hit();
             Some(entry.result.clone())
         } else {
+            crate::metrics::record_cache_miss();
             None
         }
     }
@@ -70,10 +82,10 @@ impl CapsuleCache {
         };
 
         // Evict expired entries first
-        entries.retain(|_, v| v.created_at.elapsed().as_secs() < TTL_SECS);
+        entries.retain(|_, v| v.created_at.elapsed().as_secs() < self.ttl_secs);
 
         // LRU-style eviction: remove oldest if at capacity
-        if entries.len() >= MAX_ENTRIES {
+        if entries.len() >= self.max_entries {
             if let Some(oldest_key) = entries
                 .iter()
                 .min_by_key(|(_, v)| v.created_at)

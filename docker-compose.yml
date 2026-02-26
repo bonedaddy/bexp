@@ -1,0 +1,21 @@
+services:
+  bexp:
+    build: .
+    volumes:
+      - ./:/workspace:ro
+    stdin_open: true
+
+  bexp-index:
+    build: .
+    command: ["index", "--workspace", "/workspace"]
+    volumes:
+      - ./:/workspace
+
+  bexp-dev:
+    build:
+      context: .
+      target: builder
+    working_dir: /build
+    volumes:
+      - ./src:/build/src
+    command: ["cargo", "test"]

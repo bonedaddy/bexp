@@ -45,7 +45,7 @@ pub fn resolve_via_lsp(
         return Ok(0);
     }
 
-    tracing::info!("Attempting LSP resolution for {} refs", refs.len());
+    tracing::info!(ref_count = refs.len(), "Attempting LSP resolution");
 
     // Group by file
     let mut by_file: HashMap<String, Vec<&UnresolvedRefInfo>> = HashMap::new();
@@ -64,21 +64,21 @@ pub fn resolve_via_lsp(
                 Ok(c) => c,
                 Err(e) => {
                     tracing::warn!(
-                        "Failed to spawn LSP server '{}' ({}): {}",
-                        lang_name,
-                        server_config.command,
-                        e
+                        lang = %lang_name,
+                        command = %server_config.command,
+                        error = %e,
+                        "Failed to spawn LSP server"
                     );
                     continue;
                 }
             };
 
         if let Err(e) = client.initialize() {
-            tracing::warn!("LSP '{}' initialize failed: {}", lang_name, e);
+            tracing::warn!(lang = %lang_name, error = %e, "LSP initialize failed");
             continue;
         }
 
-        tracing::info!("LSP '{}' initialized, resolving refs...", lang_name);
+        tracing::info!(lang = %lang_name, "LSP initialized, resolving refs");
 
         let mut resolved_for_server = 0;
 
@@ -135,7 +135,7 @@ pub fn resolve_via_lsp(
                     }
                     Ok(None) => {}
                     Err(e) => {
-                        tracing::debug!("LSP definition failed for {}: {}", uref.target_name, e);
+                        tracing::debug!(target = %uref.target_name, error = %e, "LSP definition failed");
                     }
                 }
             }
@@ -143,10 +143,10 @@ pub fn resolve_via_lsp(
 
         total_resolved += resolved_for_server;
         tracing::info!(
-            "LSP '{}' resolved {}/{} refs",
-            lang_name,
-            resolved_for_server,
-            refs.len()
+            lang = %lang_name,
+            resolved = resolved_for_server,
+            total = refs.len(),
+            "LSP resolution for server complete"
         );
 
         let _ = client.shutdown();
@@ -160,7 +160,7 @@ pub fn resolve_via_lsp(
         graph.rebuild_from_db(&reader)?;
     }
 
-    tracing::info!("LSP resolution complete: {} edges created", total_resolved);
+    tracing::info!(edges = total_resolved, "LSP resolution complete");
     Ok(total_resolved)
 }
 
@@ -187,7 +187,13 @@ fn load_unresolved_refs(conn: &Connection) -> Result<Vec<UnresolvedRefInfo>> {
                 file_path: row.get(7)?,
             })
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| match r {
+            Ok(v) => Some(v),
+            Err(e) => {
+                tracing::trace!(error = %e, "Skipping row due to error");
+                None
+            }
+        })
         .collect();
 
     Ok(rows)

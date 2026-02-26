@@ -2,6 +2,7 @@
 name = "bexp"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.75"
 description = "Local-first context engine for AI coding agents"
 
 [dependencies]
@@ -38,3 +39,20 @@ toml = "0.8"
 schemars = "1"
 lsp-types = "0.97"
 crossbeam-channel = "0.5"
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.16", default-features = false }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "indexing"
+harness = false
+
+[[bench]]
+name = "search"
+harness = false
+
+[[bench]]
+name = "graph"
+harness = false

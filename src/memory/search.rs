@@ -23,6 +23,7 @@ pub fn search_observations(
     limit: usize,
     session_id: Option<&str>,
 ) -> Result<Vec<MemorySearchResult>> {
+    tracing::debug!(query = query, limit = limit, session_id = ?session_id, "Searching observations");
     // Sanitize query for FTS5: strip special characters that FTS5 interprets
     // as operators (hyphens, colons, quotes, etc.) to prevent parse errors.
     let fts_query = query
@@ -79,7 +80,13 @@ pub fn search_observations(
                 row.get(8)?,
             ))
         })?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| match r {
+            Ok(v) => Some(v),
+            Err(e) => {
+                tracing::trace!(error = %e, "Skipping row due to error");
+                None
+            }
+        })
         .collect();
 
     if raw_results.is_empty() {
@@ -150,6 +157,7 @@ pub fn search_observations(
     });
     results.truncate(limit);
 
+    tracing::debug!(result_count = results.len(), "Observation search complete");
     Ok(results)
 }
 

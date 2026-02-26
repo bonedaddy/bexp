@@ -18,18 +18,15 @@ pub async fn handle(server: &BexpServer, params: SetupParams) -> Result<CallTool
 
     let config_content = generate_config(&project_type);
 
-    std::fs::create_dir_all(&bexp_dir)
-        .map_err(|e| ErrorData::internal_error(format!("Failed to create .bexp dir: {e}"), None))?;
+    std::fs::create_dir_all(&bexp_dir).map_err(super::to_error_data)?;
 
-    std::fs::write(&config_path, &config_content)
-        .map_err(|e| ErrorData::internal_error(format!("Failed to write config: {e}"), None))?;
+    std::fs::write(&config_path, &config_content).map_err(super::to_error_data)?;
 
     // Create .gitignore for .bexp
     let gitignore_path = bexp_dir.join(".gitignore");
     if !gitignore_path.exists() || force {
-        std::fs::write(&gitignore_path, "index.db\nindex.db-wal\nindex.db-shm\n").map_err(|e| {
-            ErrorData::internal_error(format!("Failed to write .gitignore: {e}"), None)
-        })?;
+        std::fs::write(&gitignore_path, "index.db\nindex.db-wal\nindex.db-shm\n")
+            .map_err(super::to_error_data)?;
     }
 
     let mut output = String::new();

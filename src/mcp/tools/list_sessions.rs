@@ -2,16 +2,17 @@ use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::db::queries;
 use crate::mcp::server::{BexpServer, ListSessionsParams};
+use crate::mcp::validation;
 
 pub async fn handle(
     server: &BexpServer,
     params: ListSessionsParams,
 ) -> Result<CallToolResult, ErrorData> {
-    let limit = params.limit.unwrap_or(20);
+    let limit = validation::validate_limit(params.limit, 20)?;
 
     let reader = server.db.reader();
     let results = queries::list_sessions_with_counts(&reader, limit)
-        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        .map_err(super::to_error_data)?;
 
     if results.is_empty() {
         return Ok(CallToolResult::success(vec![Content::text(

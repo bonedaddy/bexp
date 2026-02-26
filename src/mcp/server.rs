@@ -237,7 +237,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<CapsuleParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::capsule::handle(self, params).await
+        super::tools::with_metrics("get_context_capsule", || {
+            super::tools::capsule::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
@@ -247,7 +250,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<ImpactParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::impact::handle(self, params).await
+        super::tools::with_metrics("get_impact_graph", || {
+            super::tools::impact::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
@@ -257,7 +263,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<FlowParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::flow::handle(self, params).await
+        super::tools::with_metrics("search_logic_flow", || {
+            super::tools::flow::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
@@ -267,14 +276,17 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<SkeletonParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::skeleton::handle(self, params).await
+        super::tools::with_metrics("get_skeleton", || {
+            super::tools::skeleton::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
         description = "Get the current index status: file/node/edge counts, language breakdown, and watcher state."
     )]
     async fn index_status(&self) -> Result<CallToolResult, ErrorData> {
-        super::tools::status::handle(self).await
+        super::tools::with_metrics("index_status", || super::tools::status::handle(self)).await
     }
 
     #[tool(
@@ -284,7 +296,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<SetupParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::setup::handle(self, params).await
+        super::tools::with_metrics("workspace_setup", || {
+            super::tools::setup::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
@@ -294,7 +309,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<LspEdgesParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::lsp::handle(self, params).await
+        super::tools::with_metrics("submit_lsp_edges", || {
+            super::tools::lsp::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
@@ -304,7 +322,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<SessionParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::session::handle(self, params).await
+        super::tools::with_metrics("get_session_context", || {
+            super::tools::session::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
@@ -314,7 +335,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<MemorySearchParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::memory_search::handle(self, params).await
+        super::tools::with_metrics("search_memory", || {
+            super::tools::memory_search::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
@@ -324,7 +348,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<ObserveParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::observe::handle(self, params).await
+        super::tools::with_metrics("save_observation", || {
+            super::tools::observe::handle(self, params)
+        })
+        .await
     }
 
     // -- New tools --
@@ -336,7 +363,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<QueryNodesParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::query_nodes::handle(self, params).await
+        super::tools::with_metrics("query_nodes", || {
+            super::tools::query_nodes::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
@@ -346,7 +376,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<QueryEdgesParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::query_edges::handle(self, params).await
+        super::tools::with_metrics("query_edges", || {
+            super::tools::query_edges::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
@@ -356,7 +389,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<GraphStatsParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::graph_stats::handle(self, params).await
+        super::tools::with_metrics("graph_stats", || {
+            super::tools::graph_stats::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
@@ -366,7 +402,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<ListFilesParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::list_files::handle(self, params).await
+        super::tools::with_metrics("list_files", || {
+            super::tools::list_files::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
@@ -376,7 +415,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<UnresolvedRefsParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::unresolved::handle(self, params).await
+        super::tools::with_metrics("get_unresolved_refs", || {
+            super::tools::unresolved::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
@@ -386,7 +428,10 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<ListSessionsParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::list_sessions::handle(self, params).await
+        super::tools::with_metrics("list_sessions", || {
+            super::tools::list_sessions::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
@@ -396,21 +441,27 @@ impl BexpServer {
         &self,
         Parameters(params): Parameters<ReindexParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        super::tools::reindex::handle(self, params).await
+        super::tools::with_metrics("trigger_reindex", || {
+            super::tools::reindex::handle(self, params)
+        })
+        .await
     }
 
     #[tool(
         description = "Detect and mark stale observations whose linked files have changed. Also cleans up observations past the TTL."
     )]
     async fn detect_staleness(&self) -> Result<CallToolResult, ErrorData> {
-        super::tools::staleness::handle(self).await
+        super::tools::with_metrics("detect_staleness", || {
+            super::tools::staleness::handle(self)
+        })
+        .await
     }
 
     #[tool(
         description = "Show the current bexp configuration: token budget, skeleton level, exclude patterns, memory settings, and more."
     )]
     async fn get_config(&self) -> Result<CallToolResult, ErrorData> {
-        super::tools::get_config::handle(self).await
+        super::tools::with_metrics("get_config", || super::tools::get_config::handle(self)).await
     }
 }
 

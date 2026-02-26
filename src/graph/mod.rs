@@ -58,15 +58,17 @@ impl GraphEngine {
         *self
             .graph
             .write()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))? = graph;
+            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })? = graph;
         *self
             .id_to_index
             .write()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))? = id_map;
+            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })? = id_map;
         *self
             .pagerank
             .write()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))? = pagerank;
+            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })? = pagerank;
+
+        crate::metrics::set_graph_stats(self.node_count(), self.edge_count());
 
         Ok(())
     }
@@ -109,7 +111,7 @@ impl GraphEngine {
         let graph = self
             .graph
             .read()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
+            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })?;
 
         // Find the node
         let node_idx = graph
@@ -144,7 +146,7 @@ impl GraphEngine {
         let graph = self
             .graph
             .read()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
+            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })?;
 
         let from_idx = graph
             .node_indices()
@@ -320,9 +322,9 @@ impl GraphEngine {
         // If >20% of nodes affected, fall back to full rebuild
         if total_nodes > 0 && changed_nodes.len() * 5 > total_nodes {
             tracing::info!(
-                "Incremental update: {} changed nodes > 20% of {} total, doing full rebuild",
-                changed_nodes.len(),
-                total_nodes
+                changed_nodes = changed_nodes.len(),
+                total_nodes = total_nodes,
+                "Incremental update: >20% changed, doing full rebuild"
             );
             return self.build_from_db(conn);
         }
@@ -330,11 +332,11 @@ impl GraphEngine {
         let mut graph = self
             .graph
             .write()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
+            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })?;
         let mut id_map = self
             .id_to_index
             .write()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
+            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })?;
 
         // Collect indices to remove: all nodes belonging to changed files
         let changed_file_set: HashSet<i64> = changed_file_ids.iter().copied().collect();
@@ -404,18 +406,18 @@ impl GraphEngine {
         let graph_ref = self
             .graph
             .read()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))?;
+            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })?;
         let pagerank = centrality::compute_pagerank(&graph_ref, 0.85, 20, 1e-6);
         drop(graph_ref);
         *self
             .pagerank
             .write()
-            .map_err(|_| BexpError::Graph("lock poisoned".into()))? = pagerank;
+            .map_err(|_| BexpError::LockPoisoned { component: "graph".into() })? = pagerank;
 
         tracing::info!(
-            "Incremental graph update: removed {} old nodes, added {} new nodes",
-            indices_to_remove.len(),
-            new_nodes.len()
+            removed = indices_to_remove.len(),
+            added = new_nodes.len(),
+            "Incremental graph update complete"
         );
 
         Ok(())

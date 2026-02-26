@@ -2,21 +2,22 @@ use rmcp::model::{CallToolResult, Content, ErrorData};
 
 use crate::db::queries;
 use crate::mcp::server::{BexpServer, UnresolvedRefsParams};
+use crate::mcp::validation;
 
 pub async fn handle(
     server: &BexpServer,
     params: UnresolvedRefsParams,
 ) -> Result<CallToolResult, ErrorData> {
+    let limit = validation::validate_limit(params.limit, 50)?;
+
     if let Some(result) = super::wait_for_index(&server.indexer).await {
         return Ok(result);
     }
 
-    let limit = params.limit.unwrap_or(50);
-
     let reader = server.db.reader();
     let results =
         queries::get_unresolved_refs_filtered(&reader, params.file_path.as_deref(), limit)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+            .map_err(super::to_error_data)?;
 
     if results.is_empty() {
         return Ok(CallToolResult::success(vec![Content::text(
