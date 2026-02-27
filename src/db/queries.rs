@@ -1446,11 +1446,10 @@ pub fn get_file_structure_hash(conn: &Connection, file_id: i64) -> Result<Option
     Ok(result)
 }
 
-/// Get a summary of nodes for a file: (kind, name, signature, line_start, line_end).
-pub fn get_nodes_summary_for_file(
-    conn: &Connection,
-    file_id: i64,
-) -> Result<Vec<(String, String, Option<String>, i64, i64)>> {
+use crate::types::NodeSummary;
+
+/// Get a summary of nodes for a file.
+pub fn get_nodes_summary_for_file(conn: &Connection, file_id: i64) -> Result<Vec<NodeSummary>> {
     let mut stmt = conn.prepare(
         "SELECT kind, name, signature, line_start, line_end
          FROM nodes WHERE file_id = ?1
@@ -1458,13 +1457,13 @@ pub fn get_nodes_summary_for_file(
     )?;
     let rows = stmt
         .query_map(params![file_id], |row| {
-            Ok((
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                row.get(3)?,
-                row.get(4)?,
-            ))
+            Ok(NodeSummary {
+                kind: row.get(0)?,
+                name: row.get(1)?,
+                signature: row.get(2)?,
+                line_start: row.get(3)?,
+                line_end: row.get(4)?,
+            })
         })?
         .filter_map(|r| r.ok())
         .collect();

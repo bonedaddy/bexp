@@ -123,6 +123,15 @@ impl EdgeKind {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeSummary {
+    pub kind: String,
+    pub name: String,
+    pub signature: Option<String>,
+    pub line_start: i64,
+    pub line_end: i64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DetailLevel {

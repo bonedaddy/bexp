@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::types::NodeSummary;
+
 #[derive(Debug, Clone)]
 pub struct StructuralChange {
     pub file_path: String,
@@ -35,27 +37,24 @@ pub struct NodeRename {
 }
 
 /// Compute the structural diff between old and new node summaries.
-/// Each summary entry is (kind, name, signature, line_start, line_end).
 pub fn compute_structural_diff(
     file_path: &str,
-    old_nodes: &[(String, String, Option<String>, i64, i64)],
-    new_nodes: &[(String, String, Option<String>, i64, i64)],
+    old_nodes: &[NodeSummary],
+    new_nodes: &[NodeSummary],
 ) -> StructuralChange {
     // Index by (kind, name) for matching
-    let mut old_map: HashMap<(&str, &str), Vec<&(String, String, Option<String>, i64, i64)>> =
-        HashMap::new();
+    let mut old_map: HashMap<(&str, &str), Vec<&NodeSummary>> = HashMap::new();
     for node in old_nodes {
         old_map
-            .entry((node.0.as_str(), node.1.as_str()))
+            .entry((node.kind.as_str(), node.name.as_str()))
             .or_default()
             .push(node);
     }
 
-    let mut new_map: HashMap<(&str, &str), Vec<&(String, String, Option<String>, i64, i64)>> =
-        HashMap::new();
+    let mut new_map: HashMap<(&str, &str), Vec<&NodeSummary>> = HashMap::new();
     for node in new_nodes {
         new_map
-            .entry((node.0.as_str(), node.1.as_str()))
+            .entry((node.kind.as_str(), node.name.as_str()))
             .or_default()
             .push(node);
     }
@@ -75,12 +74,12 @@ pub fn compute_structural_diff(
             // Check for signature changes
             let old_entry = old_entries[0];
             let new_entry = new_entries[0];
-            if old_entry.2 != new_entry.2 {
+            if old_entry.signature != new_entry.signature {
                 modified.push(NodeModification {
                     kind: key.0.to_string(),
                     name: key.1.to_string(),
-                    old_signature: old_entry.2.clone(),
-                    new_signature: new_entry.2.clone(),
+                    old_signature: old_entry.signature.clone(),
+                    new_signature: new_entry.signature.clone(),
                 });
             }
         } else {
@@ -96,12 +95,12 @@ pub fn compute_structural_diff(
                 {
                     let old_entry = old_entries[0];
                     // Within 5 lines proximity = likely rename
-                    if (old_entry.3 - new_entry.3).abs() <= 5 {
+                    if (old_entry.line_start - new_entry.line_start).abs() <= 5 {
                         renamed.push(NodeRename {
                             kind: key.0.to_string(),
                             old_name: old_key.1.to_string(),
                             new_name: key.1.to_string(),
-                            line_start: new_entry.3,
+                            line_start: new_entry.line_start,
                         });
                         matched_old_keys.insert(old_key);
                         is_rename = true;
@@ -115,8 +114,8 @@ pub fn compute_structural_diff(
                     kind: key.0.to_string(),
                     name: key.1.to_string(),
                     qualified_name: None,
-                    line_start: new_entry.3,
-                    line_end: new_entry.4,
+                    line_start: new_entry.line_start,
+                    line_end: new_entry.line_end,
                 });
             }
         }
@@ -130,8 +129,8 @@ pub fn compute_structural_diff(
                 kind: key.0.to_string(),
                 name: key.1.to_string(),
                 qualified_name: None,
-                line_start: entry.3,
-                line_end: entry.4,
+                line_start: entry.line_start,
+                line_end: entry.line_end,
             });
         }
     }
@@ -160,41 +159,41 @@ mod tests {
 
     #[test]
     fn no_changes_produces_empty_diff() {
-        let nodes = vec![(
-            "function".to_string(),
-            "foo".to_string(),
-            Some("fn foo()".to_string()),
-            1,
-            5,
-        )];
+        let nodes = vec![NodeSummary {
+            kind: "function".to_string(),
+            name: "foo".to_string(),
+            signature: Some("fn foo()".to_string()),
+            line_start: 1,
+            line_end: 5,
+        }];
         let diff = compute_structural_diff("test.rs", &nodes, &nodes);
         assert!(diff.is_empty());
     }
 
     #[test]
     fn detects_added_node() {
-        let old = vec![(
-            "function".to_string(),
-            "foo".to_string(),
-            Some("fn foo()".to_string()),
-            1,
-            5,
-        )];
+        let old = vec![NodeSummary {
+            kind: "function".to_string(),
+            name: "foo".to_string(),
+            signature: Some("fn foo()".to_string()),
+            line_start: 1,
+            line_end: 5,
+        }];
         let new = vec![
-            (
-                "function".to_string(),
-                "foo".to_string(),
-                Some("fn foo()".to_string()),
-                1,
-                5,
-            ),
-            (
-                "function".to_string(),
-                "bar".to_string(),
-                Some("fn bar()".to_string()),
-                7,
-                10,
-            ),
+            NodeSummary {
+                kind: "function".to_string(),
+                name: "foo".to_string(),
+                signature: Some("fn foo()".to_string()),
+                line_start: 1,
+                line_end: 5,
+            },
+            NodeSummary {
+                kind: "function".to_string(),
+                name: "bar".to_string(),
+                signature: Some("fn bar()".to_string()),
+                line_start: 7,
+                line_end: 10,
+            },
         ];
         let diff = compute_structural_diff("test.rs", &old, &new);
         assert_eq!(diff.added_nodes.len(), 1);
@@ -204,28 +203,28 @@ mod tests {
     #[test]
     fn detects_removed_node() {
         let old = vec![
-            (
-                "function".to_string(),
-                "foo".to_string(),
-                Some("fn foo()".to_string()),
-                1,
-                5,
-            ),
-            (
-                "function".to_string(),
-                "bar".to_string(),
-                Some("fn bar()".to_string()),
-                7,
-                10,
-            ),
+            NodeSummary {
+                kind: "function".to_string(),
+                name: "foo".to_string(),
+                signature: Some("fn foo()".to_string()),
+                line_start: 1,
+                line_end: 5,
+            },
+            NodeSummary {
+                kind: "function".to_string(),
+                name: "bar".to_string(),
+                signature: Some("fn bar()".to_string()),
+                line_start: 7,
+                line_end: 10,
+            },
         ];
-        let new = vec![(
-            "function".to_string(),
-            "foo".to_string(),
-            Some("fn foo()".to_string()),
-            1,
-            5,
-        )];
+        let new = vec![NodeSummary {
+            kind: "function".to_string(),
+            name: "foo".to_string(),
+            signature: Some("fn foo()".to_string()),
+            line_start: 1,
+            line_end: 5,
+        }];
         let diff = compute_structural_diff("test.rs", &old, &new);
         assert_eq!(diff.removed_nodes.len(), 1);
         assert_eq!(diff.removed_nodes[0].name, "bar");
@@ -233,20 +232,20 @@ mod tests {
 
     #[test]
     fn detects_modified_signature() {
-        let old = vec![(
-            "function".to_string(),
-            "foo".to_string(),
-            Some("fn foo()".to_string()),
-            1,
-            5,
-        )];
-        let new = vec![(
-            "function".to_string(),
-            "foo".to_string(),
-            Some("fn foo(x: i32)".to_string()),
-            1,
-            5,
-        )];
+        let old = vec![NodeSummary {
+            kind: "function".to_string(),
+            name: "foo".to_string(),
+            signature: Some("fn foo()".to_string()),
+            line_start: 1,
+            line_end: 5,
+        }];
+        let new = vec![NodeSummary {
+            kind: "function".to_string(),
+            name: "foo".to_string(),
+            signature: Some("fn foo(x: i32)".to_string()),
+            line_start: 1,
+            line_end: 5,
+        }];
         let diff = compute_structural_diff("test.rs", &old, &new);
         assert_eq!(diff.modified_nodes.len(), 1);
         assert_eq!(

@@ -325,14 +325,12 @@ impl IndexerService {
                                 let new_nodes: Vec<_> = extracted
                                     .nodes
                                     .iter()
-                                    .map(|n| {
-                                        (
-                                            n.kind.as_str().to_string(),
-                                            n.name.clone(),
-                                            n.signature.clone(),
-                                            n.line_start as i64,
-                                            n.line_end as i64,
-                                        )
+                                    .map(|n| crate::types::NodeSummary {
+                                        kind: n.kind.as_str().to_string(),
+                                        name: n.name.clone(),
+                                        signature: n.signature.clone(),
+                                        line_start: n.line_start as i64,
+                                        line_end: n.line_end as i64,
                                     })
                                     .collect();
                                 let diff = structural_diff::compute_structural_diff(
@@ -505,14 +503,12 @@ impl IndexerService {
                             .extracted
                             .nodes
                             .iter()
-                            .map(|n| {
-                                (
-                                    n.kind.as_str().to_string(),
-                                    n.name.clone(),
-                                    n.signature.clone(),
-                                    n.line_start as i64,
-                                    n.line_end as i64,
-                                )
+                            .map(|n| crate::types::NodeSummary {
+                                kind: n.kind.as_str().to_string(),
+                                name: n.name.clone(),
+                                signature: n.signature.clone(),
+                                line_start: n.line_start as i64,
+                                line_end: n.line_end as i64,
                             })
                             .collect();
                         let diff = structural_diff::compute_structural_diff(
