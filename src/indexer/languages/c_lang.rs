@@ -420,8 +420,7 @@ fn extract_env_vars_c(
 ) {
     let mut seen = HashSet::new();
 
-    let pattern =
-        regex_lite::Regex::new(r#"getenv\(\s*"([A-Z_][A-Z0-9_]*)"\s*\)"#).unwrap();
+    let pattern = regex_lite::Regex::new(r#"getenv\(\s*"([A-Z_][A-Z0-9_]*)"\s*\)"#).unwrap();
 
     let first_func_idx = nodes.iter().position(|n| n.kind == NodeKind::Function);
 

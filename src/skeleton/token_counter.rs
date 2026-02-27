@@ -38,6 +38,6 @@ impl TokenCounter {
     /// which is ~100x faster than BPE encoding.
     pub fn count_fast(&self, text: &str) -> usize {
         // Code averages ~3.5 chars per token with cl100k_base
-        (text.len() + 2) / 3
+        text.len().div_ceil(3)
     }
 }

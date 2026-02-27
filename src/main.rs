@@ -147,7 +147,9 @@ fn index_workspace(workspace_root: &std::path::Path) -> anyhow::Result<()> {
 
 /// Compute extra roots from workspace_group, filtering out paths already under workspace_root.
 fn compute_extra_roots(config: &BexpConfig, workspace_root: &std::path::Path) -> Vec<PathBuf> {
-    let canonical_root = workspace_root.canonicalize().unwrap_or_else(|_| workspace_root.to_path_buf());
+    let canonical_root = workspace_root
+        .canonicalize()
+        .unwrap_or_else(|_| workspace_root.to_path_buf());
     config
         .workspace_group
         .iter()
@@ -271,8 +273,8 @@ async fn serve(workspace_root: PathBuf, health_port_override: Option<u16>) -> an
                 startup_indexer.set_index_ready(true);
 
                 // Pre-warm skeleton cache in background (non-blocking)
-                if let Err(e) = startup_skeletonizer
-                    .prewarm_skeletons(startup_config.default_skeleton_level)
+                if let Err(e) =
+                    startup_skeletonizer.prewarm_skeletons(startup_config.default_skeleton_level)
                 {
                     tracing::warn!(error = %e, "Skeleton pre-warm failed");
                 }

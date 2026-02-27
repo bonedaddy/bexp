@@ -977,9 +977,9 @@ fn extract_env_vars_rust(
         regex_lite::Regex::new(r#"option_env!\(\s*"([A-Z_][A-Z0-9_]*)""#).unwrap(),
     ];
 
-    let first_func_idx = nodes.iter().position(|n| {
-        n.kind == NodeKind::Function || n.kind == NodeKind::Method
-    });
+    let first_func_idx = nodes
+        .iter()
+        .position(|n| n.kind == NodeKind::Function || n.kind == NodeKind::Method);
 
     for pattern in &patterns {
         for cap in pattern.captures_iter(source) {

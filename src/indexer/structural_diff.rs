@@ -160,21 +160,41 @@ mod tests {
 
     #[test]
     fn no_changes_produces_empty_diff() {
-        let nodes = vec![
-            ("function".to_string(), "foo".to_string(), Some("fn foo()".to_string()), 1, 5),
-        ];
+        let nodes = vec![(
+            "function".to_string(),
+            "foo".to_string(),
+            Some("fn foo()".to_string()),
+            1,
+            5,
+        )];
         let diff = compute_structural_diff("test.rs", &nodes, &nodes);
         assert!(diff.is_empty());
     }
 
     #[test]
     fn detects_added_node() {
-        let old = vec![
-            ("function".to_string(), "foo".to_string(), Some("fn foo()".to_string()), 1, 5),
-        ];
+        let old = vec![(
+            "function".to_string(),
+            "foo".to_string(),
+            Some("fn foo()".to_string()),
+            1,
+            5,
+        )];
         let new = vec![
-            ("function".to_string(), "foo".to_string(), Some("fn foo()".to_string()), 1, 5),
-            ("function".to_string(), "bar".to_string(), Some("fn bar()".to_string()), 7, 10),
+            (
+                "function".to_string(),
+                "foo".to_string(),
+                Some("fn foo()".to_string()),
+                1,
+                5,
+            ),
+            (
+                "function".to_string(),
+                "bar".to_string(),
+                Some("fn bar()".to_string()),
+                7,
+                10,
+            ),
         ];
         let diff = compute_structural_diff("test.rs", &old, &new);
         assert_eq!(diff.added_nodes.len(), 1);
@@ -184,12 +204,28 @@ mod tests {
     #[test]
     fn detects_removed_node() {
         let old = vec![
-            ("function".to_string(), "foo".to_string(), Some("fn foo()".to_string()), 1, 5),
-            ("function".to_string(), "bar".to_string(), Some("fn bar()".to_string()), 7, 10),
+            (
+                "function".to_string(),
+                "foo".to_string(),
+                Some("fn foo()".to_string()),
+                1,
+                5,
+            ),
+            (
+                "function".to_string(),
+                "bar".to_string(),
+                Some("fn bar()".to_string()),
+                7,
+                10,
+            ),
         ];
-        let new = vec![
-            ("function".to_string(), "foo".to_string(), Some("fn foo()".to_string()), 1, 5),
-        ];
+        let new = vec![(
+            "function".to_string(),
+            "foo".to_string(),
+            Some("fn foo()".to_string()),
+            1,
+            5,
+        )];
         let diff = compute_structural_diff("test.rs", &old, &new);
         assert_eq!(diff.removed_nodes.len(), 1);
         assert_eq!(diff.removed_nodes[0].name, "bar");
@@ -197,16 +233,30 @@ mod tests {
 
     #[test]
     fn detects_modified_signature() {
-        let old = vec![
-            ("function".to_string(), "foo".to_string(), Some("fn foo()".to_string()), 1, 5),
-        ];
-        let new = vec![
-            ("function".to_string(), "foo".to_string(), Some("fn foo(x: i32)".to_string()), 1, 5),
-        ];
+        let old = vec![(
+            "function".to_string(),
+            "foo".to_string(),
+            Some("fn foo()".to_string()),
+            1,
+            5,
+        )];
+        let new = vec![(
+            "function".to_string(),
+            "foo".to_string(),
+            Some("fn foo(x: i32)".to_string()),
+            1,
+            5,
+        )];
         let diff = compute_structural_diff("test.rs", &old, &new);
         assert_eq!(diff.modified_nodes.len(), 1);
-        assert_eq!(diff.modified_nodes[0].old_signature, Some("fn foo()".to_string()));
-        assert_eq!(diff.modified_nodes[0].new_signature, Some("fn foo(x: i32)".to_string()));
+        assert_eq!(
+            diff.modified_nodes[0].old_signature,
+            Some("fn foo()".to_string())
+        );
+        assert_eq!(
+            diff.modified_nodes[0].new_signature,
+            Some("fn foo(x: i32)".to_string())
+        );
     }
 
     #[test]

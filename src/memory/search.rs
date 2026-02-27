@@ -154,8 +154,7 @@ pub fn search_observations(
         );
 
         // Weighted fusion with staleness penalty
-        let base_score =
-            0.4 * bm25_norm + 0.3 * recency + 0.2 * graph_score + 0.1 + session_bonus;
+        let base_score = 0.4 * bm25_norm + 0.3 * recency + 0.2 * graph_score + 0.1 + session_bonus;
         let score = base_score * staleness_penalty;
 
         results.push(MemorySearchResult {

@@ -469,10 +469,7 @@ fn detect_api_endpoints(
 
     // Django url patterns: path('route/', view_func) in urls.py
     let is_urls = file_path.ends_with("urls.py");
-    let django_re = regex_lite::Regex::new(
-        r#"path\(\s*['"]([^'"]*)['"]\s*,"#,
-    )
-    .unwrap();
+    let django_re = regex_lite::Regex::new(r#"path\(\s*['"]([^'"]*)['"]\s*,"#).unwrap();
 
     for cap in decorator_re.captures_iter(source) {
         let method_raw = cap.get(1).unwrap().as_str();
@@ -508,9 +505,10 @@ fn detect_api_endpoints(
             metadata: Some(meta),
         });
 
-        if let Some(func_idx) = nodes.iter().rposition(|n| {
-            n.kind == NodeKind::Function || n.kind == NodeKind::Method
-        }) {
+        if let Some(func_idx) = nodes
+            .iter()
+            .rposition(|n| n.kind == NodeKind::Function || n.kind == NodeKind::Method)
+        {
             if func_idx < idx {
                 edges.push(ExtractedEdge {
                     source_idx: func_idx,
@@ -555,11 +553,7 @@ fn detect_api_endpoints(
 }
 
 /// Detect environment variable reads: os.environ['VAR'], os.environ.get('VAR'), os.getenv('VAR').
-fn extract_env_vars(
-    source: &str,
-    nodes: &mut Vec<ExtractedNode>,
-    edges: &mut Vec<ExtractedEdge>,
-) {
+fn extract_env_vars(source: &str, nodes: &mut Vec<ExtractedNode>, edges: &mut Vec<ExtractedEdge>) {
     let mut seen = HashSet::new();
 
     let patterns = [
@@ -568,9 +562,9 @@ fn extract_env_vars(
         regex_lite::Regex::new(r#"os\.getenv\(\s*['"]([A-Z_][A-Z0-9_]*)['"]"#).unwrap(),
     ];
 
-    let first_func_idx = nodes.iter().position(|n| {
-        n.kind == NodeKind::Function || n.kind == NodeKind::Method
-    });
+    let first_func_idx = nodes
+        .iter()
+        .position(|n| n.kind == NodeKind::Function || n.kind == NodeKind::Method);
 
     for pattern in &patterns {
         for cap in pattern.captures_iter(source) {

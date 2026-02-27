@@ -25,10 +25,7 @@ pub async fn handle(server: &BexpServer) -> Result<CallToolResult, ErrorData> {
          - **Newly stale:** {} observations marked\n\
          - **Cleaned up:** {} observations past {}-day TTL\n\
          - **Sessions compressed:** {}",
-        stale_count,
-        cleanup_count,
-        server.config.observation_ttl_days,
-        compressed_count,
+        stale_count, cleanup_count, server.config.observation_ttl_days, compressed_count,
     );
 
     Ok(CallToolResult::success(vec![Content::text(output)]))

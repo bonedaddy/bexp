@@ -714,7 +714,10 @@ fn detect_api_endpoints(
         nodes.push(ExtractedNode {
             kind: NodeKind::ApiEndpoint,
             name,
-            qualified_name: Some(format!("{file_path}::api::{}", cap.get(2).unwrap().as_str())),
+            qualified_name: Some(format!(
+                "{file_path}::api::{}",
+                cap.get(2).unwrap().as_str()
+            )),
             signature: None,
             docstring: None,
             line_start: 0,
@@ -727,9 +730,10 @@ fn detect_api_endpoints(
         });
 
         // Link to nearest function/method
-        if let Some(func_idx) = nodes.iter().rposition(|n| {
-            n.kind == NodeKind::Function || n.kind == NodeKind::Method
-        }) {
+        if let Some(func_idx) = nodes
+            .iter()
+            .rposition(|n| n.kind == NodeKind::Function || n.kind == NodeKind::Method)
+        {
             if func_idx < idx {
                 edges.push(ExtractedEdge {
                     source_idx: func_idx,
@@ -771,9 +775,10 @@ fn detect_api_endpoints(
             metadata: Some(meta),
         });
 
-        if let Some(func_idx) = nodes.iter().rposition(|n| {
-            n.kind == NodeKind::Function || n.kind == NodeKind::Method
-        }) {
+        if let Some(func_idx) = nodes
+            .iter()
+            .rposition(|n| n.kind == NodeKind::Function || n.kind == NodeKind::Method)
+        {
             if func_idx < idx {
                 edges.push(ExtractedEdge {
                     source_idx: func_idx,
@@ -787,11 +792,17 @@ fn detect_api_endpoints(
     }
 
     // Next.js API routes: functions named GET, POST, etc. in pages/api/ or app/.../route.ts
-    if file_path.contains("pages/api/") || file_path.contains("/route.ts") || file_path.contains("/route.js") {
+    if file_path.contains("pages/api/")
+        || file_path.contains("/route.ts")
+        || file_path.contains("/route.js")
+    {
         for node in nodes.iter_mut() {
             if node.kind == NodeKind::Function {
                 let upper = node.name.to_uppercase();
-                if matches!(upper.as_str(), "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS") {
+                if matches!(
+                    upper.as_str(),
+                    "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS"
+                ) {
                     let meta = node.metadata.get_or_insert_with(HashMap::new);
                     meta.insert("api_method".to_string(), upper);
                     meta.insert("api_path".to_string(), file_path.to_string());
@@ -803,11 +814,7 @@ fn detect_api_endpoints(
 
 /// Detect environment variable reads: process.env.VAR_NAME, process.env['VAR'],
 /// import.meta.env.VAR_NAME. Creates EnvVar nodes + ReadsEnv edges.
-fn extract_env_vars(
-    source: &str,
-    nodes: &mut Vec<ExtractedNode>,
-    edges: &mut Vec<ExtractedEdge>,
-) {
+fn extract_env_vars(source: &str, nodes: &mut Vec<ExtractedNode>, edges: &mut Vec<ExtractedEdge>) {
     let mut seen = HashSet::new();
 
     // Pattern: process.env.VAR_NAME or import.meta.env.VAR_NAME
@@ -818,9 +825,9 @@ fn extract_env_vars(
     ];
 
     // Find the first function node to use as the reader context
-    let first_func_idx = nodes.iter().position(|n| {
-        n.kind == NodeKind::Function || n.kind == NodeKind::Method
-    });
+    let first_func_idx = nodes
+        .iter()
+        .position(|n| n.kind == NodeKind::Function || n.kind == NodeKind::Method);
 
     for pattern in &patterns {
         for cap in pattern.captures_iter(source) {

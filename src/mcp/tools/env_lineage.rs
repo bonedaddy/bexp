@@ -28,7 +28,11 @@ pub async fn handle(
             let defined_in = metadata
                 .as_ref()
                 .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
-                .and_then(|v| v.get("defined_in").and_then(|d| d.as_str()).map(String::from));
+                .and_then(|v| {
+                    v.get("defined_in")
+                        .and_then(|d| d.as_str())
+                        .map(String::from)
+                });
 
             output.push_str(&format!("- **`{name}`**"));
             if *reader_count > 0 {
@@ -72,7 +76,11 @@ pub async fn handle(
             .metadata
             .as_ref()
             .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
-            .and_then(|v| v.get("defined_in").and_then(|d| d.as_str()).map(String::from));
+            .and_then(|v| {
+                v.get("defined_in")
+                    .and_then(|d| d.as_str())
+                    .map(String::from)
+            });
 
         if defined_in.is_some() {
             definitions.push((file_path.clone(), defined_in));

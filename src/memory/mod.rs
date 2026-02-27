@@ -201,7 +201,10 @@ impl MemoryService {
         match consolidation::check_and_consolidate(&conn, obs_id, session_id) {
             Ok(count) => {
                 if count > 0 {
-                    tracing::info!(consolidated = count, "Auto-consolidated similar observations");
+                    tracing::info!(
+                        consolidated = count,
+                        "Auto-consolidated similar observations"
+                    );
                 }
             }
             Err(e) => tracing::warn!(error = %e, "Auto-consolidation failed (non-fatal)"),

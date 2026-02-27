@@ -96,7 +96,12 @@ fn capsule_generation_returns_relevant_content() -> Result<()> {
 
     let config = Arc::new(BexpConfig::default());
     let db = Arc::new(Database::open(&config.db_path(workspace.path()))?);
-    let indexer = IndexerService::new(db.clone(), config.clone(), workspace.path().to_path_buf(), vec![]);
+    let indexer = IndexerService::new(
+        db.clone(),
+        config.clone(),
+        workspace.path().to_path_buf(),
+        vec![],
+    );
 
     indexer.full_index()?;
 

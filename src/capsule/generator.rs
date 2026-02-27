@@ -102,7 +102,7 @@ pub fn assemble_capsule(
                 rollup.cluster_name, rollup.representative_file
             ));
             for (path, node_name) in &rollup.matched_siblings {
-                output.push_str(&format!("  - `{}` (node: `{}`)\n", path, node_name));
+                output.push_str(&format!("  - `{path}` (node: `{node_name}`)\n"));
             }
             output.push('\n');
         }

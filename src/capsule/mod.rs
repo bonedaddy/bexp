@@ -111,9 +111,10 @@ impl CapsuleGenerator {
         let t_search = std::time::Instant::now();
 
         // Open external workspace DBs if cross-workspace is enabled
-        let external_dbs: Vec<(String, rusqlite::Connection)> =
-            if cross_workspace && !self.config.workspace_group.is_empty() {
-                self.config
+        let external_dbs: Vec<(String, rusqlite::Connection)> = if cross_workspace
+            && !self.config.workspace_group.is_empty()
+        {
+            self.config
                     .workspace_group
                     .iter()
                     .filter_map(|ws_path| {
@@ -130,9 +131,9 @@ impl CapsuleGenerator {
                         }
                     })
                     .collect()
-            } else {
-                Vec::new()
-            };
+        } else {
+            Vec::new()
+        };
 
         let ext_ref: Option<&[(String, rusqlite::Connection)]> = if external_dbs.is_empty() {
             None
@@ -140,9 +141,8 @@ impl CapsuleGenerator {
             Some(&external_dbs)
         };
 
-        let search_results = search::hybrid_search_with_external(
-            &reader, &self.graph, query, &intent, 50, ext_ref,
-        )?;
+        let search_results =
+            search::hybrid_search_with_external(&reader, &self.graph, query, &intent, 50, ext_ref)?;
         let search_ms = t_search.elapsed().as_millis();
 
         tracing::debug!(
@@ -156,8 +156,9 @@ impl CapsuleGenerator {
         }
 
         // Separate local and external search results
-        let (local_results, external_results): (Vec<_>, Vec<_>) =
-            search_results.into_iter().partition(|r| r.workspace.is_none());
+        let (local_results, external_results): (Vec<_>, Vec<_>) = search_results
+            .into_iter()
+            .partition(|r| r.workspace.is_none());
 
         // 3. Allocate token budget
         let memory_budget = token_budget * self.config.memory_budget_pct / 100;
@@ -214,10 +215,7 @@ impl CapsuleGenerator {
                 let results = &by_workspace[&ws_name];
                 output.push_str(&format!("### External: {ws_name}\n\n"));
                 for r in results {
-                    let qname = r
-                        .qualified_name
-                        .as_deref()
-                        .unwrap_or(&r.name);
+                    let qname = r.qualified_name.as_deref().unwrap_or(&r.name);
                     output.push_str(&format!(
                         "- `{ws_name}/{}` ({}) — score: {:.2}\n",
                         qname, r.kind, r.score

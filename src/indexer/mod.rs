@@ -99,7 +99,9 @@ impl IndexerService {
         for extra_root in &self.extra_roots {
             match scanner.scan(extra_root) {
                 Ok(extra) => files.extend(extra),
-                Err(e) => tracing::warn!(root = %extra_root.display(), error = %e, "Failed to scan extra root for mtime hash"),
+                Err(e) => {
+                    tracing::warn!(root = %extra_root.display(), error = %e, "Failed to scan extra root for mtime hash")
+                }
             }
         }
         files.sort();
@@ -222,7 +224,9 @@ impl IndexerService {
         for extra_root in &self.extra_roots {
             match scanner.scan(extra_root) {
                 Ok(extra_files) => files.extend(extra_files),
-                Err(e) => tracing::warn!(root = %extra_root.display(), error = %e, "Failed to scan extra root"),
+                Err(e) => {
+                    tracing::warn!(root = %extra_root.display(), error = %e, "Failed to scan extra root")
+                }
             }
         }
 
@@ -298,9 +302,7 @@ impl IndexerService {
 
                 // Check if structure is unchanged
                 if let Ok(Some(old_file)) = queries::get_file_by_path(&tx, &rel_path) {
-                    if let Ok(Some(old_hash)) =
-                        queries::get_file_structure_hash(&tx, old_file.id)
-                    {
+                    if let Ok(Some(old_hash)) = queries::get_file_structure_hash(&tx, old_file.id) {
                         if old_hash == new_structure_hash {
                             structure_skip_count += 1;
                             // Still update mtime/content_hash but skip node rewrite
@@ -514,7 +516,9 @@ impl IndexerService {
                             })
                             .collect();
                         let diff = structural_diff::compute_structural_diff(
-                            &pf.rel_path, &old_nodes, &new_nodes,
+                            &pf.rel_path,
+                            &old_nodes,
+                            &new_nodes,
                         );
                         if !diff.is_empty() {
                             structural_changes.push(diff);
@@ -588,13 +592,14 @@ impl IndexerService {
 
         // Dotenv files bypass tree-sitter
         if lang == Language::Dotenv {
-            let mut extracted =
-                languages::dotenv::extract_dotenv(&content, &rel_path);
+            let mut extracted = languages::dotenv::extract_dotenv(&content, &rel_path);
             extracted.content_hash = content_hash;
             extracted.mtime_ns = mtime_ns;
             extracted.size_bytes = metadata.len();
-            extracted.structure_hash =
-                Some(extractor::compute_structure_hash(&extracted.nodes, &extracted.edges));
+            extracted.structure_hash = Some(extractor::compute_structure_hash(
+                &extracted.nodes,
+                &extracted.edges,
+            ));
             return Ok(extracted);
         }
 

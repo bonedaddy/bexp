@@ -2,13 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::Connection;
 
+use super::search::SearchResult;
 use crate::config::BexpConfig;
 use crate::db::queries;
 use crate::error::Result;
 use crate::graph::GraphEngine;
 use crate::skeleton::Skeletonizer;
-use crate::types::{DetailLevel, Language, Intent};
-use super::search::SearchResult;
+use crate::types::{DetailLevel, Intent, Language};
 
 #[derive(Debug)]
 pub struct BudgetAllocation {
@@ -159,8 +159,8 @@ pub fn allocate(
     });
 
     // Batch-fetch node counts for all candidate files
-    let file_node_counts = queries::get_file_node_counts_batch(conn, &file_order)
-        .unwrap_or_default();
+    let file_node_counts =
+        queries::get_file_node_counts_batch(conn, &file_order).unwrap_or_default();
 
     let mut seen_files = HashSet::new();
     let mut included_node_ids: HashSet<i64> = HashSet::new();
@@ -329,12 +329,17 @@ pub fn allocate(
         if let Some(cid) = &result.cluster_id {
             if let Some(rep_file) = seen_clusters.get(cid) {
                 // We already have a representative for this cluster
-                let rollup = cluster_rollups_map.entry(cid.clone()).or_insert_with(|| ClusterRollup {
-                    cluster_name: cid.clone(),
-                    representative_file: rep_file.clone(),
-                    matched_siblings: Vec::new(),
-                });
-                rollup.matched_siblings.push((result.file_path.clone(), result.name.clone()));
+                let rollup =
+                    cluster_rollups_map
+                        .entry(cid.clone())
+                        .or_insert_with(|| ClusterRollup {
+                            cluster_name: cid.clone(),
+                            representative_file: rep_file.clone(),
+                            matched_siblings: Vec::new(),
+                        });
+                rollup
+                    .matched_siblings
+                    .push((result.file_path.clone(), result.name.clone()));
                 seen_files.insert(result.file_id); // Mark as seen so we skip skeleton
                 continue;
             } else {
@@ -348,7 +353,10 @@ pub fn allocate(
     }
 
     // Phase 2: Dynamic Level-of-Detail
-    let significant_files = file_scores.values().filter(|&&s| s > high_threshold).count();
+    let significant_files = file_scores
+        .values()
+        .filter(|&&s| s > high_threshold)
+        .count();
     let dynamic_preferred_level = match significant_files {
         0..=3 => DetailLevel::Detailed,
         4..=10 => DetailLevel::Standard,
@@ -361,8 +369,7 @@ pub fn allocate(
         .take(config.max_skeleton_files * 2)
         .map(|(id, _)| *id)
         .collect();
-    let skel_cache = queries::get_skeleton_cache_batch(conn, &skel_file_ids)
-        .unwrap_or_default();
+    let skel_cache = queries::get_skeleton_cache_batch(conn, &skel_file_ids).unwrap_or_default();
 
     for (file_id, score) in skeleton_files {
         if skeleton_remaining < config.min_skeleton_budget

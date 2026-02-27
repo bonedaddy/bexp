@@ -74,7 +74,11 @@ fn compute_similarity(
     let symbol_sim = if has_symbols {
         let inter = symbols_a.intersection(&symbols_b).count() as f64;
         let union = symbols_a.union(&symbols_b).count() as f64;
-        if union > 0.0 { inter / union } else { 0.0 }
+        if union > 0.0 {
+            inter / union
+        } else {
+            0.0
+        }
     } else {
         0.0
     };
@@ -82,7 +86,11 @@ fn compute_similarity(
     let file_sim = if has_files {
         let inter = files_a.intersection(&files_b).count() as f64;
         let union = files_a.union(&files_b).count() as f64;
-        if union > 0.0 { inter / union } else { 0.0 }
+        if union > 0.0 {
+            inter / union
+        } else {
+            0.0
+        }
     } else {
         0.0
     };
@@ -145,10 +153,7 @@ pub fn check_and_consolidate(
         .filter_map(|r| r.ok())
         .collect();
 
-    let candidates: Vec<(i64, String)> = same_session
-        .into_iter()
-        .chain(cross_session)
-        .collect();
+    let candidates: Vec<(i64, String)> = same_session.into_iter().chain(cross_session).collect();
 
     for (old_id, old_content) in &candidates {
         let sim = compute_similarity(conn, new_obs_id, &new_content, *old_id, old_content);

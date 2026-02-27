@@ -46,20 +46,14 @@ pub async fn handle(
         for change in &report.structural_changes {
             output.push_str(&format!("### `{}`\n", change.file_path));
             for added in &change.added_nodes {
-                let qn = added
-                    .qualified_name
-                    .as_deref()
-                    .unwrap_or(&added.name);
+                let qn = added.qualified_name.as_deref().unwrap_or(&added.name);
                 output.push_str(&format!(
                     "- **+** {} `{}` (lines {}-{})\n",
                     added.kind, qn, added.line_start, added.line_end
                 ));
             }
             for removed in &change.removed_nodes {
-                let qn = removed
-                    .qualified_name
-                    .as_deref()
-                    .unwrap_or(&removed.name);
+                let qn = removed.qualified_name.as_deref().unwrap_or(&removed.name);
                 output.push_str(&format!(
                     "- **-** {} `{}` (lines {}-{})\n",
                     removed.kind, qn, removed.line_start, removed.line_end
@@ -67,9 +61,9 @@ pub async fn handle(
             }
             for modified in &change.modified_nodes {
                 let sig_info = match (&modified.old_signature, &modified.new_signature) {
-                    (Some(old), Some(new)) => format!(": `{}` -> `{}`", old, new),
-                    (None, Some(new)) => format!(": -> `{}`", new),
-                    (Some(old), None) => format!(": `{}` -> (none)", old),
+                    (Some(old), Some(new)) => format!(": `{old}` -> `{new}`"),
+                    (None, Some(new)) => format!(": -> `{new}`"),
+                    (Some(old), None) => format!(": `{old}` -> (none)"),
                     (None, None) => String::new(),
                 };
                 output.push_str(&format!(

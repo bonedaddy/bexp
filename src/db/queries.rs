@@ -84,7 +84,15 @@ pub fn insert_file(
     mtime_ns: i64,
     size_bytes: i64,
 ) -> Result<i64> {
-    insert_file_with_structure_hash(conn, path, language, content_hash, mtime_ns, size_bytes, None)
+    insert_file_with_structure_hash(
+        conn,
+        path,
+        language,
+        content_hash,
+        mtime_ns,
+        size_bytes,
+        None,
+    )
 }
 
 pub fn insert_file_with_structure_hash(
@@ -115,7 +123,14 @@ pub fn insert_file_with_structure_hash(
              skeleton_minimal = NULL,
              skeleton_standard = NULL,
              skeleton_detailed = NULL",
-        params![path, language, content_hash, mtime_ns, size_bytes, structure_hash],
+        params![
+            path,
+            language,
+            content_hash,
+            mtime_ns,
+            size_bytes,
+            structure_hash
+        ],
     )?;
 
     // Get the actual file ID (last_insert_rowid unreliable on upsert)
@@ -449,10 +464,7 @@ pub fn get_skeleton_cache_batch(
 }
 
 /// Get all files missing a skeleton cache for the given level.
-pub fn get_files_missing_skeleton(
-    conn: &Connection,
-    level: &str,
-) -> Result<Vec<FileRecord>> {
+pub fn get_files_missing_skeleton(conn: &Connection, level: &str) -> Result<Vec<FileRecord>> {
     let col = match level {
         "minimal" => "skeleton_minimal",
         "standard" => "skeleton_standard",
@@ -527,7 +539,9 @@ pub fn query_nodes_filtered(
     if let Some(q) = query {
         // FTS5 path: covers name, qualified_name, tokenized variants, signature,
         // docstring, and file_path — a superset of what LIKE searches.
-        if let Ok(results) = query_nodes_fts_fast(conn, q, kind, file_path, visibility, exported_only, limit) {
+        if let Ok(results) =
+            query_nodes_fts_fast(conn, q, kind, file_path, visibility, exported_only, limit)
+        {
             // Return FTS results even if empty — no LIKE fallback needed since
             // FTS5 indexes the same columns. Skipping LIKE saves ~10ms on misses.
             return Ok(results);
@@ -536,7 +550,15 @@ pub fn query_nodes_filtered(
     }
 
     // No-query path or FTS error: LIKE-based search
-    query_nodes_like(conn, query, kind, file_path, visibility, exported_only, limit)
+    query_nodes_like(
+        conn,
+        query,
+        kind,
+        file_path,
+        visibility,
+        exported_only,
+        limit,
+    )
 }
 
 /// Fast FTS5-based query_nodes. Uses a single FTS5+JOIN query for text matching
@@ -703,7 +725,10 @@ fn query_nodes_like(
     }
     let _ = idx;
 
-    sql.push_str(&format!(" ORDER BY f.path, n.line_start LIMIT ?{}", bind_values.len() + 1));
+    sql.push_str(&format!(
+        " ORDER BY f.path, n.line_start LIMIT ?{}",
+        bind_values.len() + 1
+    ));
     bind_values.push(Box::new(limit as i64));
 
     let mut stmt = conn.prepare(&sql)?;

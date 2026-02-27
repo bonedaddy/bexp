@@ -287,16 +287,15 @@ pub fn detect_shared_types(conn: &Connection) -> Result<usize> {
             .flatten();
 
         let new_metadata = if let Some(ref existing_json) = existing {
-            if let Ok(mut map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(
-                existing_json,
-            ) {
+            if let Ok(mut map) =
+                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(existing_json)
+            {
                 map.insert(
                     "shared_type".to_string(),
                     serde_json::Value::String("true".to_string()),
                 );
-                serde_json::to_string(&map).unwrap_or_else(|_| {
-                    r#"{"shared_type":"true"}"#.to_string()
-                })
+                serde_json::to_string(&map)
+                    .unwrap_or_else(|_| r#"{"shared_type":"true"}"#.to_string())
             } else {
                 r#"{"shared_type":"true"}"#.to_string()
             }

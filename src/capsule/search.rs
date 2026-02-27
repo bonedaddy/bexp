@@ -98,8 +98,7 @@ pub fn hybrid_search_with_external(
     let fts_or_query = sanitize_fts_query(query);
 
     let fts_results = if fts_and_query != fts_or_query {
-        let and_results =
-            queries::search_nodes_fts_full(conn, &fts_and_query, limit * 2)?;
+        let and_results = queries::search_nodes_fts_full(conn, &fts_and_query, limit * 2)?;
         if and_results.len() >= 5 {
             and_results
         } else {
@@ -224,10 +223,9 @@ pub fn hybrid_search_with_external(
                     let tfidf = compute_tfidf_score(query, &r.name, r.signature.as_deref());
                     let path_bonus = compute_path_bonus(query, &r.file_path);
                     // External results: no graph centrality or confidence (separate graph)
-                    let score = (bm25_weight * bm25_norm
-                        + tfidf_weight * tfidf
-                        + path_weight * path_bonus)
-                        * 0.85; // Cross-workspace penalty
+                    let score =
+                        (bm25_weight * bm25_norm + tfidf_weight * tfidf + path_weight * path_bonus)
+                            * 0.85; // Cross-workspace penalty
 
                     results.push(SearchResult {
                         node_id: r.node_id,
@@ -261,7 +259,7 @@ pub fn hybrid_search_with_external(
             *dir_counts.entry(dir).or_insert(0) += 1;
         }
     }
-    
+
     for r in &mut results {
         if let Some(parent) = std::path::Path::new(&r.file_path).parent() {
             let dir = parent.to_string_lossy().to_string();
@@ -385,10 +383,7 @@ pub fn sanitize_fts_query(query: &str) -> String {
             if segment.is_empty() {
                 continue;
             }
-            let cleaned: String = segment
-                .chars()
-                .filter(|c| c.is_alphanumeric())
-                .collect();
+            let cleaned: String = segment.chars().filter(|c| c.is_alphanumeric()).collect();
             if cleaned.is_empty() {
                 continue;
             }
@@ -399,10 +394,9 @@ pub fn sanitize_fts_query(query: &str) -> String {
                 if lower.len() > 1
                     && !STOP_WORDS.contains(&lower.as_str())
                     && !CODE_STOP_WORDS.contains(&lower.as_str())
+                    && !subterms.contains(&lower)
                 {
-                    if !subterms.contains(&lower) {
-                        subterms.push(lower);
-                    }
+                    subterms.push(lower);
                 }
             }
         }
@@ -445,10 +439,7 @@ pub fn sanitize_fts_query_and(query: &str) -> String {
             if segment.is_empty() {
                 continue;
             }
-            let cleaned: String = segment
-                .chars()
-                .filter(|c| c.is_alphanumeric())
-                .collect();
+            let cleaned: String = segment.chars().filter(|c| c.is_alphanumeric()).collect();
             if cleaned.is_empty() {
                 continue;
             }
@@ -458,10 +449,9 @@ pub fn sanitize_fts_query_and(query: &str) -> String {
                 if lower.len() > 1
                     && !STOP_WORDS.contains(&lower.as_str())
                     && !CODE_STOP_WORDS.contains(&lower.as_str())
+                    && !all_terms.contains(&lower)
                 {
-                    if !all_terms.contains(&lower) {
-                        all_terms.push(lower);
-                    }
+                    all_terms.push(lower);
                 }
             }
         }
@@ -530,7 +520,7 @@ fn compute_tfidf_score(query: &str, name: &str, signature: Option<&str>) -> f64 
 
     // Split name and signature into word tokens for boundary-aware matching
     let name_words = tokenize_identifier(name);
-    let sig_words = signature.map(|s| tokenize_identifier(s)).unwrap_or_default();
+    let sig_words = signature.map(tokenize_identifier).unwrap_or_default();
 
     let mut matches = 0.0;
     for term in &query_terms {

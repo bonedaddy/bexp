@@ -60,9 +60,11 @@ impl FileWatcher {
                             .map(|e| e.path)
                             .filter(|p| {
                                 // Try stripping workspace root or any extra root
-                                let rel = p.strip_prefix(&root_clone)
+                                let rel = p
+                                    .strip_prefix(&root_clone)
                                     .or_else(|_| {
-                                        extra_roots_clone.iter()
+                                        extra_roots_clone
+                                            .iter()
                                             .find_map(|r| p.strip_prefix(r).ok())
                                             .ok_or(())
                                     })
