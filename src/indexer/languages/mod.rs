@@ -9,6 +9,8 @@ pub mod typescript;
 use crate::indexer::extractor::LanguageExtractor;
 use crate::types::Language;
 
+pub mod dotenv;
+
 pub fn get_extractor(lang: Language) -> Box<dyn LanguageExtractor> {
     match lang {
         Language::TypeScript => Box::new(typescript::TypeScriptExtractor),
@@ -18,5 +20,8 @@ pub fn get_extractor(lang: Language) -> Box<dyn LanguageExtractor> {
         Language::Html => Box::new(html::HtmlExtractor),
         Language::C => Box::new(c_lang::CExtractor),
         Language::Cpp => Box::new(cpp::CppExtractor),
+        Language::Dotenv => {
+            panic!("Dotenv files use DotenvExtractor::extract() directly, not get_extractor()")
+        }
     }
 }

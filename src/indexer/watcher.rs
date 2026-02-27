@@ -35,9 +35,21 @@ impl FileWatcher {
             .watcher()
             .watch(&workspace_root, notify::RecursiveMode::Recursive)?;
 
+        // Also watch extra roots (external workspace_group members)
+        let extra_roots: Vec<PathBuf> = indexer.extra_roots().to_vec();
+        for extra_root in &extra_roots {
+            if let Err(e) = debouncer
+                .watcher()
+                .watch(extra_root, notify::RecursiveMode::Recursive)
+            {
+                tracing::warn!(root = %extra_root.display(), error = %e, "Failed to watch extra root");
+            }
+        }
+
         // Bridge from std channel to tokio channel
         let config_clone = config.clone();
         let root_clone = workspace_root.clone();
+        let extra_roots_clone = extra_roots.clone();
         std::thread::spawn(move || {
             while let Ok(events) = std_rx.recv() {
                 match events {
@@ -47,7 +59,16 @@ impl FileWatcher {
                             .filter(|e| e.kind == DebouncedEventKind::Any)
                             .map(|e| e.path)
                             .filter(|p| {
-                                let rel = p.strip_prefix(&root_clone).unwrap_or(p);
+                                // Try stripping workspace root or any extra root
+                                let rel = p
+                                    .strip_prefix(&root_clone)
+                                    .or_else(|_| {
+                                        extra_roots_clone
+                                            .iter()
+                                            .find_map(|r| p.strip_prefix(r).ok())
+                                            .ok_or(())
+                                    })
+                                    .unwrap_or(p);
                                 !config_clone.is_excluded(rel)
                             })
                             .filter(|p| {
@@ -81,8 +102,21 @@ impl FileWatcher {
                             files = report.file_count,
                             nodes = report.node_count,
                             edges = report.edge_count,
+                            structure_skipped = report.structure_skip_count,
+                            structural_changes = report.structural_changes.len(),
                             "Incremental reindex complete"
                         );
+                        for change in &report.structural_changes {
+                            let added = change.added_nodes.len();
+                            let removed = change.removed_nodes.len();
+                            let modified = change.modified_nodes.len();
+                            let renamed = change.renamed_nodes.len();
+                            tracing::info!(
+                                file = %change.file_path,
+                                added, removed, modified, renamed,
+                                "Structural change detected"
+                            );
+                        }
                         // Incremental graph update instead of full rebuild
                         if !report.changed_file_ids.is_empty() {
                             match db.reader() {

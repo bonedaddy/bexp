@@ -75,6 +75,7 @@ pub fn get_index_stats(conn: &Connection) -> Result<IndexStats> {
     })
 }
 
+#[allow(dead_code)]
 pub fn insert_file(
     conn: &Connection,
     path: &str,
@@ -83,6 +84,26 @@ pub fn insert_file(
     mtime_ns: i64,
     size_bytes: i64,
 ) -> Result<i64> {
+    insert_file_with_structure_hash(
+        conn,
+        path,
+        language,
+        content_hash,
+        mtime_ns,
+        size_bytes,
+        None,
+    )
+}
+
+pub fn insert_file_with_structure_hash(
+    conn: &Connection,
+    path: &str,
+    language: &str,
+    content_hash: &str,
+    mtime_ns: i64,
+    size_bytes: i64,
+    structure_hash: Option<&str>,
+) -> Result<i64> {
     // Delete old nodes first if file exists (cascading delete handles edges)
     conn.execute(
         "DELETE FROM nodes WHERE file_id IN (SELECT id FROM files WHERE path = ?1)",
@@ -90,18 +111,26 @@ pub fn insert_file(
     )?;
 
     conn.execute(
-        "INSERT INTO files (path, language, content_hash, mtime_ns, size_bytes)
-         VALUES (?1, ?2, ?3, ?4, ?5)
+        "INSERT INTO files (path, language, content_hash, mtime_ns, size_bytes, structure_hash)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(path) DO UPDATE SET
              language = excluded.language,
              content_hash = excluded.content_hash,
              mtime_ns = excluded.mtime_ns,
              size_bytes = excluded.size_bytes,
+             structure_hash = excluded.structure_hash,
              indexed_at = datetime('now'),
              skeleton_minimal = NULL,
              skeleton_standard = NULL,
              skeleton_detailed = NULL",
-        params![path, language, content_hash, mtime_ns, size_bytes],
+        params![
+            path,
+            language,
+            content_hash,
+            mtime_ns,
+            size_bytes,
+            structure_hash
+        ],
     )?;
 
     // Get the actual file ID (last_insert_rowid unreliable on upsert)
@@ -269,6 +298,7 @@ pub fn get_all_edges(conn: &Connection) -> Result<Vec<EdgeRecord>> {
     Ok(rows)
 }
 
+#[allow(dead_code)]
 pub fn search_nodes_fts(conn: &Connection, query: &str, limit: usize) -> Result<Vec<(i64, f64)>> {
     // Tokenize the query so FTS5 can match against tokenized columns
     let tokenized = crate::db::tokenizer::tokenize_query(query);
@@ -278,6 +308,17 @@ pub fn search_nodes_fts(conn: &Connection, query: &str, limit: usize) -> Result<
         tokenized
     };
 
+    search_nodes_fts_raw(conn, &fts_query, limit)
+}
+
+/// Execute a pre-sanitized FTS5 query directly (no additional tokenization).
+/// Use this when the caller has already built a valid FTS5 query string.
+#[allow(dead_code)]
+pub fn search_nodes_fts_raw(
+    conn: &Connection,
+    fts_query: &str,
+    limit: usize,
+) -> Result<Vec<(i64, f64)>> {
     let mut stmt = conn.prepare(
         "SELECT rowid, rank FROM nodes_fts WHERE nodes_fts MATCH ?1 ORDER BY rank LIMIT ?2",
     )?;
@@ -289,6 +330,52 @@ pub fn search_nodes_fts(conn: &Connection, query: &str, limit: usize) -> Result<
     Ok(rows)
 }
 
+/// Combined FTS search + node/file data in a single query.
+/// Replaces separate calls to search_nodes_fts_raw and get_nodes_with_files_by_ids.
+#[derive(Debug, Clone)]
+pub struct FtsSearchResult {
+    pub node_id: i64,
+    pub rank: f64,
+    pub file_id: i64,
+    pub name: String,
+    pub qualified_name: Option<String>,
+    pub kind: String,
+    pub signature: Option<String>,
+    pub file_path: String,
+}
+
+pub fn search_nodes_fts_full(
+    conn: &Connection,
+    fts_query: &str,
+    limit: usize,
+) -> Result<Vec<FtsSearchResult>> {
+    let mut stmt = conn.prepare(
+        "SELECT n.id, nf.rank, n.file_id, n.name, n.qualified_name, n.kind, n.signature, f.path
+         FROM nodes_fts nf
+         JOIN nodes n ON n.id = nf.rowid
+         JOIN files f ON f.id = n.file_id
+         WHERE nodes_fts MATCH ?1
+         ORDER BY nf.rank
+         LIMIT ?2",
+    )?;
+    let rows = stmt
+        .query_map(params![fts_query, limit as i64], |row| {
+            Ok(FtsSearchResult {
+                node_id: row.get(0)?,
+                rank: row.get(1)?,
+                file_id: row.get(2)?,
+                name: row.get(3)?,
+                qualified_name: row.get(4)?,
+                kind: row.get(5)?,
+                signature: row.get(6)?,
+                file_path: row.get(7)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+#[allow(dead_code)]
 pub fn get_file_by_id(conn: &Connection, id: i64) -> Result<Option<FileRecord>> {
     let mut stmt = conn.prepare(
         "SELECT id, path, language, content_hash, mtime_ns, size_bytes, token_count
@@ -327,6 +414,84 @@ pub fn update_file_skeleton(
     let sql = format!("UPDATE files SET {col} = ?1, {tok_col} = ?2 WHERE id = ?3");
     conn.execute(&sql, params![skeleton, token_count, file_id])?;
     Ok(())
+}
+
+/// Cached skeleton data for batch retrieval.
+#[derive(Debug, Clone)]
+pub struct SkeletonCacheRow {
+    pub path: String,
+    pub skeleton_minimal: Option<String>,
+    pub skeleton_standard: Option<String>,
+    pub skeleton_detailed: Option<String>,
+}
+
+/// Batch-fetch file paths and cached skeletons for a set of file IDs.
+pub fn get_skeleton_cache_batch(
+    conn: &Connection,
+    file_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, SkeletonCacheRow>> {
+    if file_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders: Vec<String> = (1..=file_ids.len()).map(|i| format!("?{i}")).collect();
+    let in_clause = placeholders.join(",");
+    let sql = format!(
+        "SELECT id, path, skeleton_minimal, skeleton_standard, skeleton_detailed
+         FROM files WHERE id IN ({in_clause})"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = file_ids
+        .iter()
+        .map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>)
+        .collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
+    let rows = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                SkeletonCacheRow {
+                    path: row.get(1)?,
+                    skeleton_minimal: row.get(2)?,
+                    skeleton_standard: row.get(3)?,
+                    skeleton_detailed: row.get(4)?,
+                },
+            ))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+/// Get all files missing a skeleton cache for the given level.
+pub fn get_files_missing_skeleton(conn: &Connection, level: &str) -> Result<Vec<FileRecord>> {
+    let col = match level {
+        "minimal" => "skeleton_minimal",
+        "standard" => "skeleton_standard",
+        "detailed" => "skeleton_detailed",
+        _ => return Ok(Vec::new()),
+    };
+    let sql = format!(
+        "SELECT id, path, language, content_hash, mtime_ns, size_bytes, token_count
+         FROM files WHERE {col} IS NULL"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], |row| {
+        Ok(FileRecord {
+            id: row.get(0)?,
+            path: row.get(1)?,
+            language: row.get(2)?,
+            content_hash: row.get(3)?,
+            mtime_ns: row.get(4)?,
+            size_bytes: row.get(5)?,
+            token_count: row.get(6)?,
+        })
+    })?;
+    let mut results = Vec::new();
+    for row in rows {
+        results.push(row?);
+    }
+    Ok(results)
 }
 
 pub fn set_metadata(conn: &Connection, key: &str, value: &str) -> Result<()> {
@@ -371,40 +536,175 @@ pub fn query_nodes_filtered(
     exported_only: bool,
     limit: usize,
 ) -> Result<Vec<NodeQueryResult>> {
+    if let Some(q) = query {
+        // FTS5 path: covers name, qualified_name, tokenized variants, signature,
+        // docstring, and file_path — a superset of what LIKE searches.
+        if let Ok(results) =
+            query_nodes_fts_fast(conn, q, kind, file_path, visibility, exported_only, limit)
+        {
+            // Return FTS results even if empty — no LIKE fallback needed since
+            // FTS5 indexes the same columns. Skipping LIKE saves ~10ms on misses.
+            return Ok(results);
+        }
+        // FTS errored (e.g. bad query syntax) — fall through to LIKE
+    }
+
+    // No-query path or FTS error: LIKE-based search
+    query_nodes_like(
+        conn,
+        query,
+        kind,
+        file_path,
+        visibility,
+        exported_only,
+        limit,
+    )
+}
+
+/// Fast FTS5-based query_nodes. Uses a single FTS5+JOIN query for text matching
+/// with kind/visibility/path filters applied directly.
+fn query_nodes_fts_fast(
+    conn: &Connection,
+    query: &str,
+    kind: Option<&str>,
+    file_path: Option<&str>,
+    visibility: Option<&str>,
+    exported_only: bool,
+    limit: usize,
+) -> Result<Vec<NodeQueryResult>> {
+    use crate::capsule::search::sanitize_fts_query;
+
+    let fts_query = sanitize_fts_query(query);
+    if fts_query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Restrict FTS to name/qname columns for query_nodes — more selective
+    // than searching signature/docstring, giving relevant symbol results.
+    let column_restricted = format!(
+        "{{name qualified_name tokenized_name tokenized_qualified_name file_path}}: {fts_query}"
+    );
+
+    // Single query: FTS5 JOIN nodes JOIN files with all filters applied.
+    // This avoids the two-step FTS→IN pattern and its overhead.
     let mut sql = String::from(
         "SELECT n.name, n.qualified_name, n.kind, f.path,
                 n.line_start, n.line_end, n.visibility, n.is_export,
                 n.signature, n.docstring
-         FROM nodes n
+         FROM nodes_fts nf
+         JOIN nodes n ON n.id = nf.rowid
          JOIN files f ON f.id = n.file_id
-         WHERE 1=1",
+         WHERE nodes_fts MATCH ?1",
+    );
+
+    let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    bind_values.push(Box::new(column_restricted));
+    let mut idx = 2;
+
+    if let Some(k) = kind {
+        sql.push_str(&format!(" AND n.kind = ?{idx}"));
+        bind_values.push(Box::new(k.to_string()));
+        idx += 1;
+    } else {
+        // Exclude imports by default — they're noise
+        sql.push_str(" AND n.kind != 'import'");
+    }
+    if let Some(fp) = file_path {
+        sql.push_str(&format!(" AND f.path LIKE ?{idx}"));
+        bind_values.push(Box::new(format!("%{fp}%")));
+        idx += 1;
+    }
+    if let Some(vis) = visibility {
+        sql.push_str(&format!(" AND n.visibility = ?{idx}"));
+        bind_values.push(Box::new(vis.to_string()));
+        idx += 1;
+    }
+    if exported_only {
+        sql.push_str(" AND n.is_export = 1");
+    }
+
+    sql.push_str(&format!(" ORDER BY nf.rank LIMIT ?{idx}"));
+    bind_values.push(Box::new(limit as i64));
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
+
+    let results: Vec<NodeQueryResult> = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok(NodeQueryResult {
+                name: row.get(0)?,
+                qualified_name: row.get(1)?,
+                kind: row.get(2)?,
+                file_path: row.get(3)?,
+                line_start: row.get(4)?,
+                line_end: row.get(5)?,
+                visibility: row.get(6)?,
+                is_export: row.get::<_, i32>(7)? != 0,
+                signature: row.get(8)?,
+                docstring: row.get(9)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(results)
+}
+
+/// LIKE-based fallback query for query_nodes_filtered (used when no text query
+/// is provided or when FTS returns no results).
+fn query_nodes_like(
+    conn: &Connection,
+    query: Option<&str>,
+    kind: Option<&str>,
+    file_path: Option<&str>,
+    visibility: Option<&str>,
+    exported_only: bool,
+    limit: usize,
+) -> Result<Vec<NodeQueryResult>> {
+    let mut sql = String::from(
+        "SELECT n.name, n.qualified_name, n.kind, f.path,
+                n.line_start, n.line_end, n.visibility, n.is_export,
+                n.signature, n.docstring",
     );
     let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
     let mut idx = 1;
+    let mut where_conditions = Vec::new();
 
     if let Some(q) = query {
         let terms: Vec<&str> = q.split_whitespace().filter(|t| t.len() > 1).collect();
         if terms.is_empty() {
-            sql.push_str(&format!(
-                " AND (n.name LIKE ?{idx} OR n.qualified_name LIKE ?{idx})"
+            where_conditions.push(format!(
+                "(n.name LIKE ?{idx} OR n.qualified_name LIKE ?{idx} OR f.path LIKE ?{idx})"
             ));
             bind_values.push(Box::new(format!("%{q}%")));
             idx += 1;
         } else {
-            // Match any term against name, qualified_name, or signature
-            let mut term_conditions = Vec::new();
+            let mut term_match_parts = Vec::new();
             for term in &terms {
-                term_conditions.push(format!(
+                term_match_parts.push(format!(
                     "(n.name LIKE ?{idx} COLLATE NOCASE \
                      OR n.qualified_name LIKE ?{idx} COLLATE NOCASE \
-                     OR n.signature LIKE ?{idx} COLLATE NOCASE)"
+                     OR n.signature LIKE ?{idx} COLLATE NOCASE \
+                     OR f.path LIKE ?{idx} COLLATE NOCASE)"
                 ));
                 bind_values.push(Box::new(format!("%{term}%")));
                 idx += 1;
             }
-            sql.push_str(&format!(" AND ({})", term_conditions.join(" OR ")));
+            where_conditions.push(format!("({})", term_match_parts.join(" OR ")));
         }
     }
+
+    sql.push_str(
+        " FROM nodes n
+         JOIN files f ON f.id = n.file_id
+         WHERE 1=1",
+    );
+
+    for cond in &where_conditions {
+        sql.push_str(&format!(" AND {cond}"));
+    }
+
     if let Some(k) = kind {
         sql.push_str(&format!(" AND n.kind = ?{idx}"));
         bind_values.push(Box::new(k.to_string()));
@@ -423,7 +723,12 @@ pub fn query_nodes_filtered(
     if exported_only {
         sql.push_str(" AND n.is_export = 1");
     }
-    sql.push_str(&format!(" ORDER BY f.path, n.line_start LIMIT ?{idx}"));
+    let _ = idx;
+
+    sql.push_str(&format!(
+        " ORDER BY f.path, n.line_start LIMIT ?{}",
+        bind_values.len() + 1
+    ));
     bind_values.push(Box::new(limit as i64));
 
     let mut stmt = conn.prepare(&sql)?;
@@ -931,6 +1236,7 @@ pub fn get_nodes_with_files_by_ids(
 }
 
 /// Get total node count for a file.
+#[allow(dead_code)]
 pub fn get_file_node_count(conn: &Connection, file_id: i64) -> Result<i64> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM nodes WHERE file_id = ?1",
@@ -938,6 +1244,35 @@ pub fn get_file_node_count(conn: &Connection, file_id: i64) -> Result<i64> {
         |r| r.get(0),
     )?;
     Ok(count)
+}
+
+/// Batch-fetch node counts for multiple files.
+pub fn get_file_node_counts_batch(
+    conn: &Connection,
+    file_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, i64>> {
+    if file_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders: Vec<String> = (1..=file_ids.len()).map(|i| format!("?{i}")).collect();
+    let in_clause = placeholders.join(",");
+    let sql = format!(
+        "SELECT file_id, COUNT(*) FROM nodes WHERE file_id IN ({in_clause}) GROUP BY file_id"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = file_ids
+        .iter()
+        .map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>)
+        .collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
+    let rows = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
 }
 
 /// Get all nodes for the given file IDs (for incremental graph updates).
@@ -1095,5 +1430,145 @@ pub fn get_edges_for_nodes(conn: &Connection, node_ids: &[i64]) -> Result<Vec<Ed
             })
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Get the structure_hash for a file by its ID.
+pub fn get_file_structure_hash(conn: &Connection, file_id: i64) -> Result<Option<String>> {
+    let result: Option<String> = conn
+        .query_row(
+            "SELECT structure_hash FROM files WHERE id = ?1",
+            params![file_id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+    Ok(result)
+}
+
+use crate::types::NodeSummary;
+
+/// Get a summary of nodes for a file.
+pub fn get_nodes_summary_for_file(conn: &Connection, file_id: i64) -> Result<Vec<NodeSummary>> {
+    let mut stmt = conn.prepare(
+        "SELECT kind, name, signature, line_start, line_end
+         FROM nodes WHERE file_id = ?1
+         ORDER BY line_start",
+    )?;
+    let rows = stmt
+        .query_map(params![file_id], |row| {
+            Ok(NodeSummary {
+                kind: row.get(0)?,
+                name: row.get(1)?,
+                signature: row.get(2)?,
+                line_start: row.get(3)?,
+                line_end: row.get(4)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+/// Find EnvVar nodes by name.
+pub fn find_env_var_nodes(conn: &Connection, var_name: &str) -> Result<Vec<NodeRecord>> {
+    let mut stmt = conn.prepare(
+        "SELECT n.id, n.file_id, n.kind, n.name, n.qualified_name, n.signature, n.docstring,
+                n.line_start, n.line_end, n.col_start, n.col_end, n.visibility, n.is_export, n.metadata
+         FROM nodes n
+         WHERE n.kind = 'env_var' AND n.name = ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![var_name], |row| {
+            Ok(NodeRecord {
+                id: row.get(0)?,
+                file_id: row.get(1)?,
+                kind: row.get(2)?,
+                name: row.get(3)?,
+                qualified_name: row.get(4)?,
+                signature: row.get(5)?,
+                docstring: row.get(6)?,
+                line_start: row.get(7)?,
+                line_end: row.get(8)?,
+                col_start: row.get(9)?,
+                col_end: row.get(10)?,
+                visibility: row.get(11)?,
+                is_export: row.get::<_, i32>(12)? != 0,
+                metadata: row.get(13)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+/// Find all edges of kind 'reads_env' targeting the given env var node IDs,
+/// returning the source node + its file path.
+pub fn find_env_readers(
+    conn: &Connection,
+    env_node_ids: &[i64],
+) -> Result<Vec<(NodeRecord, String)>> {
+    if env_node_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders: Vec<String> = (1..=env_node_ids.len()).map(|i| format!("?{i}")).collect();
+    let sql = format!(
+        "SELECT n.id, n.file_id, n.kind, n.name, n.qualified_name, n.signature, n.docstring,
+                n.line_start, n.line_end, n.col_start, n.col_end, n.visibility, n.is_export, n.metadata,
+                f.path
+         FROM edges e
+         JOIN nodes n ON n.id = e.source_node_id
+         JOIN files f ON f.id = n.file_id
+         WHERE e.kind = 'reads_env' AND e.target_node_id IN ({})",
+        placeholders.join(",")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    for &id in env_node_ids {
+        bind_values.push(Box::new(id));
+    }
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
+    let rows = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok((
+                NodeRecord {
+                    id: row.get(0)?,
+                    file_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    name: row.get(3)?,
+                    qualified_name: row.get(4)?,
+                    signature: row.get(5)?,
+                    docstring: row.get(6)?,
+                    line_start: row.get(7)?,
+                    line_end: row.get(8)?,
+                    col_start: row.get(9)?,
+                    col_end: row.get(10)?,
+                    visibility: row.get(11)?,
+                    is_export: row.get::<_, i32>(12)? != 0,
+                    metadata: row.get(13)?,
+                },
+                row.get::<_, String>(14)?,
+            ))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+/// List all env var nodes with reader counts.
+pub fn list_all_env_vars(conn: &Connection) -> Result<Vec<(String, i64, Option<String>)>> {
+    let mut stmt = conn.prepare(
+        "SELECT n.name, COUNT(DISTINCT e.source_node_id) as reader_count, n.metadata
+         FROM nodes n
+         LEFT JOIN edges e ON e.target_node_id = n.id AND e.kind = 'reads_env'
+         WHERE n.kind = 'env_var'
+         GROUP BY n.name
+         ORDER BY reader_count DESC, n.name",
+    )?;
+    let rows = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
     Ok(rows)
 }

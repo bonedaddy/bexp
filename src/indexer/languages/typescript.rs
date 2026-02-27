@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use tree_sitter::{Node, Tree};
 
 use crate::indexer::extractor::*;
@@ -26,6 +28,12 @@ impl LanguageExtractor for TypeScriptExtractor {
             None,
         );
 
+        // Detect env var usage: process.env.VAR, import.meta.env.VAR
+        extract_env_vars(source, &mut nodes, &mut edges);
+
+        // Detect API endpoints: NestJS decorators, Express routes, Next.js API routes
+        detect_api_endpoints(source, file_path, &mut nodes, &mut edges);
+
         ExtractedFile {
             language: Language::TypeScript,
             content_hash: String::new(),
@@ -34,6 +42,7 @@ impl LanguageExtractor for TypeScriptExtractor {
             nodes,
             edges,
             unresolved_refs,
+            structure_hash: None,
         }
     }
 }
@@ -661,6 +670,196 @@ fn extract_variable_declaration(
                         });
                     }
                 }
+            }
+        }
+    }
+}
+
+/// Detect API endpoint patterns: NestJS decorators (@Get, @Post, etc.),
+/// Express routes (app.get('/path', ...)), and Next.js API routes.
+fn detect_api_endpoints(
+    source: &str,
+    file_path: &str,
+    nodes: &mut Vec<ExtractedNode>,
+    edges: &mut Vec<ExtractedEdge>,
+) {
+    let mut seen = HashSet::new();
+
+    // NestJS-style decorators: @Get('/path'), @Post('/path'), etc.
+    let decorator_re = regex_lite::Regex::new(
+        r#"@(Get|Post|Put|Delete|Patch|Head|Options|All)\(\s*['"]([^'"]*)['"]\s*\)"#,
+    )
+    .unwrap();
+
+    // Express-style routes: app.get('/path', ...) or router.post('/path', ...)
+    let express_re = regex_lite::Regex::new(
+        r#"(?:app|router)\.(get|post|put|delete|patch|all|head|options)\(\s*['"]([^'"]*)['"]\s*,"#,
+    )
+    .unwrap();
+
+    for cap in decorator_re.captures_iter(source) {
+        let method = cap.get(1).unwrap().as_str().to_uppercase();
+        let path = cap.get(2).unwrap().as_str();
+        let key = format!("{method}:{path}");
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let name = format!("{method} {path}");
+        let mut meta = HashMap::new();
+        meta.insert("api_method".to_string(), method);
+        meta.insert("api_path".to_string(), path.to_string());
+
+        let idx = nodes.len();
+        nodes.push(ExtractedNode {
+            kind: NodeKind::ApiEndpoint,
+            name,
+            qualified_name: Some(format!(
+                "{file_path}::api::{}",
+                cap.get(2).unwrap().as_str()
+            )),
+            signature: None,
+            docstring: None,
+            line_start: 0,
+            line_end: 0,
+            col_start: 0,
+            col_end: 0,
+            visibility: None,
+            is_export: false,
+            metadata: Some(meta),
+        });
+
+        // Link to nearest function/method
+        if let Some(func_idx) = nodes
+            .iter()
+            .rposition(|n| n.kind == NodeKind::Function || n.kind == NodeKind::Method)
+        {
+            if func_idx < idx {
+                edges.push(ExtractedEdge {
+                    source_idx: func_idx,
+                    target_idx: idx,
+                    kind: EdgeKind::DefinesApi,
+                    confidence: 0.9,
+                    context: None,
+                });
+            }
+        }
+    }
+
+    for cap in express_re.captures_iter(source) {
+        let method = cap.get(1).unwrap().as_str().to_uppercase();
+        let path = cap.get(2).unwrap().as_str();
+        let key = format!("{method}:{path}");
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let name = format!("{method} {path}");
+        let mut meta = HashMap::new();
+        meta.insert("api_method".to_string(), method);
+        meta.insert("api_path".to_string(), path.to_string());
+
+        let idx = nodes.len();
+        nodes.push(ExtractedNode {
+            kind: NodeKind::ApiEndpoint,
+            name,
+            qualified_name: Some(format!("{file_path}::api::{path}")),
+            signature: None,
+            docstring: None,
+            line_start: 0,
+            line_end: 0,
+            col_start: 0,
+            col_end: 0,
+            visibility: None,
+            is_export: false,
+            metadata: Some(meta),
+        });
+
+        if let Some(func_idx) = nodes
+            .iter()
+            .rposition(|n| n.kind == NodeKind::Function || n.kind == NodeKind::Method)
+        {
+            if func_idx < idx {
+                edges.push(ExtractedEdge {
+                    source_idx: func_idx,
+                    target_idx: idx,
+                    kind: EdgeKind::DefinesApi,
+                    confidence: 0.9,
+                    context: None,
+                });
+            }
+        }
+    }
+
+    // Next.js API routes: functions named GET, POST, etc. in pages/api/ or app/.../route.ts
+    if file_path.contains("pages/api/")
+        || file_path.contains("/route.ts")
+        || file_path.contains("/route.js")
+    {
+        for node in nodes.iter_mut() {
+            if node.kind == NodeKind::Function {
+                let upper = node.name.to_uppercase();
+                if matches!(
+                    upper.as_str(),
+                    "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS"
+                ) {
+                    let meta = node.metadata.get_or_insert_with(HashMap::new);
+                    meta.insert("api_method".to_string(), upper);
+                    meta.insert("api_path".to_string(), file_path.to_string());
+                }
+            }
+        }
+    }
+}
+
+/// Detect environment variable reads: process.env.VAR_NAME, process.env['VAR'],
+/// import.meta.env.VAR_NAME. Creates EnvVar nodes + ReadsEnv edges.
+fn extract_env_vars(source: &str, nodes: &mut Vec<ExtractedNode>, edges: &mut Vec<ExtractedEdge>) {
+    let mut seen = HashSet::new();
+
+    // Pattern: process.env.VAR_NAME or import.meta.env.VAR_NAME
+    let patterns = [
+        (regex_lite::Regex::new(r"process\.env\.([A-Z_][A-Z0-9_]*)").unwrap()),
+        (regex_lite::Regex::new(r"import\.meta\.env\.([A-Z_][A-Z0-9_]*)").unwrap()),
+        (regex_lite::Regex::new(r#"process\.env\[['"]([A-Z_][A-Z0-9_]*)['"]\]"#).unwrap()),
+    ];
+
+    // Find the first function node to use as the reader context
+    let first_func_idx = nodes
+        .iter()
+        .position(|n| n.kind == NodeKind::Function || n.kind == NodeKind::Method);
+
+    for pattern in &patterns {
+        for cap in pattern.captures_iter(source) {
+            let var_name = cap.get(1).unwrap().as_str();
+            if !seen.insert(var_name.to_string()) {
+                continue;
+            }
+
+            let env_idx = nodes.len();
+            nodes.push(ExtractedNode {
+                kind: NodeKind::EnvVar,
+                name: var_name.to_string(),
+                qualified_name: Some(format!("env::{var_name}")),
+                signature: None,
+                docstring: None,
+                line_start: 0,
+                line_end: 0,
+                col_start: 0,
+                col_end: 0,
+                visibility: None,
+                is_export: false,
+                metadata: None,
+            });
+
+            if let Some(func_idx) = first_func_idx {
+                edges.push(ExtractedEdge {
+                    source_idx: func_idx,
+                    target_idx: env_idx,
+                    kind: EdgeKind::ReadsEnv,
+                    confidence: 0.9,
+                    context: None,
+                });
             }
         }
     }

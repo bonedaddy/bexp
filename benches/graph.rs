@@ -80,7 +80,7 @@ fn setup_graph_workspace() -> GraphBenchState {
     fs::create_dir_all(db_path.parent().unwrap()).unwrap();
     let db = Arc::new(Database::open(&db_path).unwrap());
 
-    let indexer = IndexerService::new(db.clone(), config, workspace);
+    let indexer = IndexerService::new(db.clone(), config, workspace, vec![]);
     indexer.full_index().unwrap();
 
     GraphBenchState { db }

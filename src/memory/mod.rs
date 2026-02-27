@@ -1,3 +1,4 @@
+pub mod consolidation;
 pub mod observation;
 pub mod search;
 pub mod session;
@@ -56,11 +57,20 @@ impl MemoryService {
         } else {
             output.push_str("## Observations\n\n");
             for obs in &observations {
-                let stale_marker = if obs.is_stale { " [STALE]" } else { "" };
+                let mut markers = String::new();
+                if obs.is_stale {
+                    markers.push_str(" [STALE]");
+                }
+                if obs.consolidated_into.is_some() {
+                    markers.push_str(" [CONSOLIDATED]");
+                }
+                if let Some(ap) = &obs.anti_pattern {
+                    markers.push_str(&format!(" [ANTI-PATTERN: {ap}]"));
+                }
                 output.push_str(&format!(
                     "### {}{}\n\n{}\n\n*{}*\n\n",
                     obs.headline.as_deref().unwrap_or("Observation"),
-                    stale_marker,
+                    markers,
                     obs.content,
                     obs.created_at,
                 ));
@@ -112,11 +122,22 @@ impl MemoryService {
 
         let mut output = String::new();
         for result in &results {
-            let stale = if result.is_stale { " [STALE]" } else { "" };
+            let mut markers = String::new();
+            if result.is_stale {
+                markers.push_str(" [STALE]");
+            }
+            if result.consolidated_into.is_some() {
+                markers.push_str(" [CONSOLIDATED]");
+            }
+            if let Some(reason) = &result.stale_reason {
+                if reason != "consolidated" {
+                    markers.push_str(&format!(" [STALE: {reason}]"));
+                }
+            }
             output.push_str(&format!(
                 "- **{}**{} (score: {:.2}, {})\n  {}\n\n",
                 result.headline.as_deref().unwrap_or("Observation"),
-                stale,
+                markers,
                 result.score,
                 result.created_at,
                 result.summary.as_deref().unwrap_or(&result.content),
@@ -175,6 +196,29 @@ impl MemoryService {
 
         // Auto-link: detect symbol names and file paths in content
         auto_link_observation(&conn, obs_id, content)?;
+
+        // Auto-consolidation: mark similar older observations as consolidated
+        match consolidation::check_and_consolidate(&conn, obs_id, session_id) {
+            Ok(count) => {
+                if count > 0 {
+                    tracing::info!(
+                        consolidated = count,
+                        "Auto-consolidated similar observations"
+                    );
+                }
+            }
+            Err(e) => tracing::warn!(error = %e, "Auto-consolidation failed (non-fatal)"),
+        }
+
+        // Anti-pattern detection
+        match consolidation::detect_anti_patterns(&conn, session_id) {
+            Ok(count) => {
+                if count > 0 {
+                    tracing::info!(tagged = count, "Anti-patterns detected");
+                }
+            }
+            Err(e) => tracing::warn!(error = %e, "Anti-pattern detection failed (non-fatal)"),
+        }
 
         crate::metrics::record_observation_saved();
 

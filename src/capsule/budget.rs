@@ -2,14 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::Connection;
 
+use super::search::SearchResult;
 use crate::config::BexpConfig;
 use crate::db::queries;
 use crate::error::Result;
 use crate::graph::GraphEngine;
 use crate::skeleton::Skeletonizer;
-use crate::types::{DetailLevel, Language};
-
-use super::search::SearchResult;
+use crate::types::{DetailLevel, Intent, Language};
 
 #[derive(Debug)]
 pub struct BudgetAllocation {
@@ -19,8 +18,25 @@ pub struct BudgetAllocation {
     pub bridges: Vec<BridgeExcerpt>,
     /// Files to include as skeletons
     pub skeletons: Vec<SkeletonFile>,
+    /// Collapsed summary of matching files grouped by cluster
+    pub rollups: Vec<ClusterRollup>,
+    /// Files that matched but were dropped due to budget constraints
+    pub unallocated_matches: Vec<UnallocatedMatch>,
     /// Total tokens used
     pub total_tokens: usize,
+}
+
+#[derive(Debug)]
+pub struct ClusterRollup {
+    pub cluster_name: String,
+    pub representative_file: String,
+    pub matched_siblings: Vec<(String, String)>, // (file_path, matching_node_name)
+}
+
+#[derive(Debug)]
+pub struct UnallocatedMatch {
+    pub path: String,
+    pub score: f64,
 }
 
 #[derive(Debug)]
@@ -77,7 +93,7 @@ pub fn allocate(
     skeletonizer: &Skeletonizer,
     search_results: &[SearchResult],
     budget: usize,
-    _default_level: DetailLevel,
+    intent: &Intent,
     graph: Option<&GraphEngine>,
     config: &BexpConfig,
 ) -> Result<BudgetAllocation> {
@@ -85,6 +101,8 @@ pub fn allocate(
         pivots: Vec::new(),
         bridges: Vec::new(),
         skeletons: Vec::new(),
+        rollups: Vec::new(),
+        unallocated_matches: Vec::new(),
         total_tokens: 0,
     };
 
@@ -121,15 +139,13 @@ pub fn allocate(
 
     // Build file score map from search results
     let mut file_scores: HashMap<i64, f64> = HashMap::new();
+    let mut file_results: HashMap<i64, &SearchResult> = HashMap::new();
     for result in search_results {
-        file_scores
-            .entry(result.file_id)
-            .and_modify(|s| {
-                if result.score > *s {
-                    *s = result.score;
-                }
-            })
-            .or_insert(result.score);
+        let current_score = file_scores.entry(result.file_id).or_insert(result.score);
+        if result.score >= *current_score {
+            *current_score = result.score;
+            file_results.insert(result.file_id, result);
+        }
     }
 
     // Sort files by highest score
@@ -141,6 +157,10 @@ pub fn allocate(
             .partial_cmp(file_scores.get(a).unwrap_or(&0.0))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+
+    // Batch-fetch node counts for all candidate files
+    let file_node_counts =
+        queries::get_file_node_counts_batch(conn, &file_order).unwrap_or_default();
 
     let mut seen_files = HashSet::new();
     let mut included_node_ids: HashSet<i64> = HashSet::new();
@@ -162,6 +182,10 @@ pub fn allocate(
         let file_path = &ranges[0].file_path;
         let score = file_scores.get(&file_id).copied().unwrap_or(0.0);
 
+        // Get total node count to decide full-file vs excerpt strategy
+        let total_node_count = file_node_counts.get(&file_id).copied().unwrap_or(0) as usize;
+        let matched_count = ranges.len();
+
         // Read file content
         let content = match std::fs::read_to_string(file_path) {
             Ok(c) => c,
@@ -169,16 +193,23 @@ pub fn allocate(
         };
         let total_lines = content.lines().count();
 
-        // Get total node count for this file
-        let total_node_count = queries::get_file_node_count(conn, file_id).unwrap_or(0) as usize;
-        let matched_count = ranges.len();
+        // Phase 3: Sniper Snippets for Usage Intent
+        let is_usage_intent = matches!(intent, Intent::BlastRadius);
+        let padding = if is_usage_intent {
+            config.context_padding.min(2) // Tighter padding for snippets
+        } else {
+            config.context_padding
+        };
 
         // Decide: full file or excerpt
-        let use_full_file =
-            total_lines < 50 || (total_node_count > 0 && matched_count * 2 >= total_node_count);
+        let use_full_file = if is_usage_intent {
+            false // Force snippets for usage discovery
+        } else {
+            total_lines < 50 || (total_node_count > 0 && matched_count * 2 >= total_node_count)
+        };
 
         if use_full_file {
-            let tokens = skeletonizer.count_tokens(&content);
+            let tokens = skeletonizer.count_tokens_fast(&content);
             if tokens <= pivot_remaining {
                 for r in ranges {
                     included_node_ids.insert(r.node_id);
@@ -202,11 +233,11 @@ pub fn allocate(
                 .iter()
                 .map(|r| (r.line_start as usize, r.line_end as usize, r.name.clone()))
                 .collect();
-            let merged = merge_ranges(&raw_ranges, total_lines, config.context_padding);
+            let merged = merge_ranges(&raw_ranges, total_lines, padding);
 
             for mr in merged {
                 let excerpt = extract_lines(&content, mr.line_start, mr.line_end);
-                let tokens = skeletonizer.count_tokens(&excerpt);
+                let tokens = skeletonizer.count_tokens_fast(&excerpt);
                 if tokens <= pivot_remaining {
                     for r in ranges {
                         if (r.line_start as usize) >= mr.line_start
@@ -251,7 +282,7 @@ pub fn allocate(
                 break;
             }
             let sig = nr.signature.as_deref().unwrap_or(&nr.name);
-            let tokens = skeletonizer.count_tokens(sig);
+            let tokens = skeletonizer.count_tokens_fast(sig);
             if tokens <= bridge_remaining {
                 bridge_remaining -= tokens;
                 allocation.bridges.push(BridgeExcerpt {
@@ -275,88 +306,175 @@ pub fn allocate(
     // Skeleton files: remaining files from search results not already included
     let max_score = search_results.first().map(|r| r.score).unwrap_or(1.0);
     let high_threshold = max_score * 0.7;
-    let medium_threshold = max_score * 0.4;
 
-    // Deduplicate and get remaining files
+    // Phase 1: Clusters & Rollups
+    let mut seen_clusters: HashMap<String, String> = HashMap::new();
+    for pivot in &allocation.pivots {
+        if let Some(r) = file_results.get(&pivot.file_id) {
+            if let Some(cid) = &r.cluster_id {
+                seen_clusters.insert(cid.clone(), r.file_path.clone());
+            }
+        }
+    }
+
     let mut skeleton_files: Vec<(i64, f64)> = Vec::new();
     let mut skel_seen = HashSet::new();
+    let mut cluster_rollups_map: HashMap<String, ClusterRollup> = HashMap::new();
+
     for result in search_results {
-        if !seen_files.contains(&result.file_id) && skel_seen.insert(result.file_id) {
+        if seen_files.contains(&result.file_id) {
+            continue;
+        }
+
+        if let Some(cid) = &result.cluster_id {
+            if let Some(rep_file) = seen_clusters.get(cid) {
+                // We already have a representative for this cluster
+                let rollup =
+                    cluster_rollups_map
+                        .entry(cid.clone())
+                        .or_insert_with(|| ClusterRollup {
+                            cluster_name: cid.clone(),
+                            representative_file: rep_file.clone(),
+                            matched_siblings: Vec::new(),
+                        });
+                rollup
+                    .matched_siblings
+                    .push((result.file_path.clone(), result.name.clone()));
+                seen_files.insert(result.file_id); // Mark as seen so we skip skeleton
+                continue;
+            } else {
+                seen_clusters.insert(cid.clone(), result.file_path.clone());
+            }
+        }
+
+        if skel_seen.insert(result.file_id) {
             skeleton_files.push((result.file_id, result.score));
         }
     }
 
+    // Phase 2: Dynamic Level-of-Detail
+    let significant_files = file_scores
+        .values()
+        .filter(|&&s| s > high_threshold)
+        .count();
+    let dynamic_preferred_level = match significant_files {
+        0..=3 => DetailLevel::Detailed,
+        4..=10 => DetailLevel::Standard,
+        _ => DetailLevel::Minimal,
+    };
+
+    // Pre-fetch skeleton data for candidate files in one batch query
+    let skel_file_ids: Vec<i64> = skeleton_files
+        .iter()
+        .take(config.max_skeleton_files * 2)
+        .map(|(id, _)| *id)
+        .collect();
+    let skel_cache = queries::get_skeleton_cache_batch(conn, &skel_file_ids).unwrap_or_default();
+
     for (file_id, score) in skeleton_files {
-        if skeleton_remaining < config.min_skeleton_budget {
-            break;
+        if skeleton_remaining < config.min_skeleton_budget
+            || allocation.skeletons.len() >= config.max_skeleton_files
+        {
+            if let Some(r) = file_results.get(&file_id) {
+                allocation.unallocated_matches.push(UnallocatedMatch {
+                    path: r.file_path.clone(),
+                    score,
+                });
+            }
+            continue;
         }
 
-        let file = match queries::get_file_by_id(conn, file_id)? {
-            Some(f) => f,
-            None => continue,
+        let cached_row = match skel_cache.get(&file_id) {
+            Some(r) => r,
+            None => {
+                if let Some(r) = file_results.get(&file_id) {
+                    allocation.unallocated_matches.push(UnallocatedMatch {
+                        path: r.file_path.clone(),
+                        score,
+                    });
+                }
+                continue;
+            }
         };
 
-        let ext = std::path::Path::new(&file.path)
+        let ext = std::path::Path::new(&cached_row.path)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
         let lang = match Language::from_extension(ext) {
             Some(l) => l,
-            None => continue,
-        };
-
-        let preferred_level = if score >= high_threshold {
-            DetailLevel::Detailed
-        } else if score >= medium_threshold {
-            DetailLevel::Standard
-        } else {
-            DetailLevel::Minimal
-        };
-
-        let (skeleton, level) = {
-            let content = match std::fs::read_to_string(&file.path) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-
-            let levels_to_try = match preferred_level {
-                DetailLevel::Detailed => vec![
-                    DetailLevel::Detailed,
-                    DetailLevel::Standard,
-                    DetailLevel::Minimal,
-                ],
-                DetailLevel::Standard => vec![DetailLevel::Standard, DetailLevel::Minimal],
-                DetailLevel::Minimal => vec![DetailLevel::Minimal],
-            };
-
-            let mut chosen = None;
-            for level in levels_to_try {
-                let skel = skeletonizer
-                    .skeletonize_source(&content, lang, level)
-                    .unwrap_or_default();
-                let tok = skeletonizer.count_tokens(&skel);
-                if tok <= skeleton_remaining {
-                    chosen = Some((skel, level));
-                    break;
+            None => {
+                if let Some(r) = file_results.get(&file_id) {
+                    allocation.unallocated_matches.push(UnallocatedMatch {
+                        path: r.file_path.clone(),
+                        score,
+                    });
                 }
-            }
-
-            match chosen {
-                Some(c) => c,
-                None => continue,
+                continue;
             }
         };
 
-        let tokens = skeletonizer.count_tokens(&skeleton);
+        let levels_to_try = match dynamic_preferred_level {
+            DetailLevel::Detailed => vec![
+                DetailLevel::Detailed,
+                DetailLevel::Standard,
+                DetailLevel::Minimal,
+            ],
+            DetailLevel::Standard => vec![DetailLevel::Standard, DetailLevel::Minimal],
+            DetailLevel::Minimal => vec![DetailLevel::Minimal],
+        };
+
+        let mut chosen = None;
+        for level in levels_to_try {
+            let cached = match level {
+                DetailLevel::Minimal => cached_row.skeleton_minimal.as_ref(),
+                DetailLevel::Standard => cached_row.skeleton_standard.as_ref(),
+                DetailLevel::Detailed => cached_row.skeleton_detailed.as_ref(),
+            };
+
+            let skel = if let Some(cached_skel) = cached {
+                cached_skel.clone()
+            } else {
+                let content = match std::fs::read_to_string(&cached_row.path) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+                skeletonizer
+                    .skeletonize_source(&content, lang, level)
+                    .unwrap_or_default()
+            };
+
+            let tok = skeletonizer.count_tokens_fast(&skel);
+            if tok <= skeleton_remaining {
+                chosen = Some((skel, tok, level));
+                break;
+            }
+        }
+
+        let (skeleton, tokens, level) = match chosen {
+            Some(c) => c,
+            None => {
+                if let Some(r) = file_results.get(&file_id) {
+                    allocation.unallocated_matches.push(UnallocatedMatch {
+                        path: r.file_path.clone(),
+                        score,
+                    });
+                }
+                continue;
+            }
+        };
+
         skeleton_remaining -= tokens;
         allocation.skeletons.push(SkeletonFile {
             file_id,
-            path: file.path.clone(),
+            path: cached_row.path.clone(),
             skeleton,
             tokens,
             level,
         });
     }
+
+    allocation.rollups = cluster_rollups_map.into_values().collect();
 
     tracing::debug!(
         skeleton_count = allocation.skeletons.len(),

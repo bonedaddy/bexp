@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use tree_sitter::{Node, Tree};
 
 use crate::indexer::extractor::*;
@@ -26,6 +28,9 @@ impl LanguageExtractor for CppExtractor {
             None,
         );
 
+        // Detect env var usage: getenv("VAR")
+        extract_env_vars_c(source, &mut nodes, &mut edges);
+
         ExtractedFile {
             language: Language::Cpp,
             content_hash: String::new(),
@@ -34,6 +39,7 @@ impl LanguageExtractor for CppExtractor {
             nodes,
             edges,
             unresolved_refs,
+            structure_hash: None,
         }
     }
 }
@@ -617,6 +623,52 @@ fn extract_calls(
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i as u32) {
             extract_calls(child, source, parent_idx, unresolved_refs);
+        }
+    }
+}
+
+/// Detect environment variable reads: getenv("VAR")
+fn extract_env_vars_c(
+    source: &str,
+    nodes: &mut Vec<ExtractedNode>,
+    edges: &mut Vec<ExtractedEdge>,
+) {
+    let mut seen = HashSet::new();
+
+    let pattern = regex_lite::Regex::new(r#"getenv\(\s*"([A-Z_][A-Z0-9_]*)"\s*\)"#).unwrap();
+
+    let first_func_idx = nodes.iter().position(|n| n.kind == NodeKind::Function);
+
+    for cap in pattern.captures_iter(source) {
+        let var_name = cap.get(1).unwrap().as_str();
+        if !seen.insert(var_name.to_string()) {
+            continue;
+        }
+
+        let env_idx = nodes.len();
+        nodes.push(ExtractedNode {
+            kind: NodeKind::EnvVar,
+            name: var_name.to_string(),
+            qualified_name: Some(format!("env::{var_name}")),
+            signature: None,
+            docstring: None,
+            line_start: 0,
+            line_end: 0,
+            col_start: 0,
+            col_end: 0,
+            visibility: None,
+            is_export: false,
+            metadata: None,
+        });
+
+        if let Some(func_idx) = first_func_idx {
+            edges.push(ExtractedEdge {
+                source_idx: func_idx,
+                target_idx: env_idx,
+                kind: EdgeKind::ReadsEnv,
+                confidence: 0.9,
+                context: None,
+            });
         }
     }
 }

@@ -86,6 +86,10 @@ pub struct BexpConfig {
     #[serde(default = "default_min_skeleton_budget")]
     pub min_skeleton_budget: usize,
 
+    /// Maximum number of skeleton files per capsule (limits tree-sitter overhead).
+    #[serde(default = "default_max_skeleton_files")]
+    pub max_skeleton_files: usize,
+
     /// Percentage of total token budget reserved for overhead (headers, formatting).
     #[serde(default = "default_overhead_reserve_pct")]
     pub overhead_reserve_pct: usize,
@@ -150,6 +154,9 @@ fn default_min_bridge_budget() -> usize {
 fn default_min_skeleton_budget() -> usize {
     50
 }
+fn default_max_skeleton_files() -> usize {
+    3
+}
 fn default_overhead_reserve_pct() -> usize {
     10
 }
@@ -185,6 +192,7 @@ impl Default for BexpConfig {
             min_pivot_budget: default_min_pivot_budget(),
             min_bridge_budget: default_min_bridge_budget(),
             min_skeleton_budget: default_min_skeleton_budget(),
+            max_skeleton_files: default_max_skeleton_files(),
             overhead_reserve_pct: default_overhead_reserve_pct(),
             pivot_budget_pct: default_pivot_budget_pct(),
             bridge_budget_pct: default_bridge_budget_pct(),

@@ -61,9 +61,14 @@ pub fn assemble_capsule(
     if !allocation.bridges.is_empty() {
         output.push_str("---\n\n## Bridge Context\n\n");
         for bridge in &allocation.bridges {
+            let sig = if bridge.signature.len() > 200 {
+                format!("{}…", &bridge.signature[..200])
+            } else {
+                bridge.signature.clone()
+            };
             output.push_str(&format!(
                 "- `{}` in `{}`: `{}`\n",
-                bridge.node_name, bridge.path, bridge.signature
+                bridge.node_name, bridge.path, sig
             ));
         }
         output.push('\n');
@@ -84,6 +89,33 @@ pub fn assemble_capsule(
                 skel.level.as_str(),
                 ext,
                 skel.skeleton
+            ));
+        }
+    }
+
+    // Cluster rollups
+    if !allocation.rollups.is_empty() {
+        output.push_str("---\n\n## Related Code Clusters\n\n");
+        for rollup in &allocation.rollups {
+            output.push_str(&format!(
+                "**Cluster: `{}`**\n- Detailed above: `{}`\n- Also matched (similar structure):\n",
+                rollup.cluster_name, rollup.representative_file
+            ));
+            for (path, node_name) in &rollup.matched_siblings {
+                output.push_str(&format!("  - `{path}` (node: `{node_name}`)\n"));
+            }
+            output.push('\n');
+        }
+    }
+
+    // Unallocated matches
+    if !allocation.unallocated_matches.is_empty() {
+        output.push_str("---\n\n## ⚠️ Context Truncated\n\n");
+        output.push_str("The following files matched the query but were omitted to stay within the token budget. Use specific `read_file` or narrower search queries to inspect them:\n\n");
+        for match_ in &allocation.unallocated_matches {
+            output.push_str(&format!(
+                "- `{}` (score: {:.2})\n",
+                match_.path, match_.score
             ));
         }
     }

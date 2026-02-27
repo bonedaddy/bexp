@@ -1,4 +1,5 @@
 pub mod capsule;
+pub mod env_lineage;
 pub mod flow;
 pub mod get_config;
 pub mod graph_stats;

@@ -54,6 +54,7 @@ async fn capsule_with_valid_query_returns_success() {
         token_budget: Some(4000),
         session_id: None,
         intent: None,
+        cross_workspace: None,
     };
     let result = super::capsule::handle(&server, params).await;
     assert!(
@@ -71,6 +72,7 @@ async fn capsule_with_empty_query_returns_error() {
         token_budget: None,
         session_id: None,
         intent: None,
+        cross_workspace: None,
     };
     let result = super::capsule::handle(&server, params).await;
     assert!(result.is_err(), "empty query should return error");
@@ -84,6 +86,7 @@ async fn capsule_with_session_id() {
         token_budget: Some(2000),
         session_id: Some("test-session".to_string()),
         intent: Some("explore".to_string()),
+        cross_workspace: None,
     };
     let result = super::capsule::handle(&server, params).await;
     assert!(result.is_ok());
@@ -205,6 +208,7 @@ async fn query_nodes_returns_matching_symbols() {
         exported_only: None,
         include_pagerank: None,
         limit: None,
+        cross_workspace: None,
     };
     let result = super::query_nodes::handle(&server, params).await;
     assert!(result.is_ok());
@@ -221,6 +225,7 @@ async fn query_nodes_with_kind_filter() {
         exported_only: None,
         include_pagerank: None,
         limit: Some(10),
+        cross_workspace: None,
     };
     let result = super::query_nodes::handle(&server, params).await;
     assert!(result.is_ok());
@@ -237,6 +242,7 @@ async fn query_nodes_with_limit_zero_fails() {
         exported_only: None,
         include_pagerank: None,
         limit: Some(0),
+        cross_workspace: None,
     };
     let result = super::query_nodes::handle(&server, params).await;
     assert!(result.is_err(), "limit=0 should return validation error");
@@ -253,6 +259,7 @@ async fn query_nodes_with_limit_over_max_fails() {
         exported_only: None,
         include_pagerank: None,
         limit: Some(1001),
+        cross_workspace: None,
     };
     let result = super::query_nodes::handle(&server, params).await;
     assert!(result.is_err(), "limit>1000 should return validation error");
@@ -269,6 +276,7 @@ async fn query_nodes_with_pagerank() {
         exported_only: None,
         include_pagerank: Some(true),
         limit: None,
+        cross_workspace: None,
     };
     let result = super::query_nodes::handle(&server, params).await;
     assert!(result.is_ok());
@@ -285,6 +293,7 @@ async fn query_nodes_with_file_path_filter() {
         exported_only: None,
         include_pagerank: None,
         limit: None,
+        cross_workspace: None,
     };
     let result = super::query_nodes::handle(&server, params).await;
     assert!(result.is_ok());

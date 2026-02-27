@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use tree_sitter::{Node, Tree};
 
@@ -28,6 +28,9 @@ impl LanguageExtractor for RustExtractor {
             None,
         );
 
+        // Detect env var usage: std::env::var("VAR"), env::var("VAR"), env!("VAR"), option_env!("VAR")
+        extract_env_vars_rust(source, &mut nodes, &mut edges);
+
         ExtractedFile {
             language: Language::Rust,
             content_hash: String::new(),
@@ -36,6 +39,7 @@ impl LanguageExtractor for RustExtractor {
             nodes,
             edges,
             unresolved_refs,
+            structure_hash: None,
         }
     }
 }
@@ -954,6 +958,61 @@ fn extract_calls(
                 continue;
             }
             extract_calls(child, source, parent_idx, unresolved_refs);
+        }
+    }
+}
+
+/// Detect environment variable reads: std::env::var("VAR"), env::var("VAR"),
+/// env!("VAR"), option_env!("VAR").
+fn extract_env_vars_rust(
+    source: &str,
+    nodes: &mut Vec<ExtractedNode>,
+    edges: &mut Vec<ExtractedEdge>,
+) {
+    let mut seen = HashSet::new();
+
+    let patterns = [
+        regex_lite::Regex::new(r#"(?:std::)?env::var\(\s*"([A-Z_][A-Z0-9_]*)""#).unwrap(),
+        regex_lite::Regex::new(r#"env!\(\s*"([A-Z_][A-Z0-9_]*)""#).unwrap(),
+        regex_lite::Regex::new(r#"option_env!\(\s*"([A-Z_][A-Z0-9_]*)""#).unwrap(),
+    ];
+
+    let first_func_idx = nodes
+        .iter()
+        .position(|n| n.kind == NodeKind::Function || n.kind == NodeKind::Method);
+
+    for pattern in &patterns {
+        for cap in pattern.captures_iter(source) {
+            let var_name = cap.get(1).unwrap().as_str();
+            if !seen.insert(var_name.to_string()) {
+                continue;
+            }
+
+            let env_idx = nodes.len();
+            nodes.push(ExtractedNode {
+                kind: NodeKind::EnvVar,
+                name: var_name.to_string(),
+                qualified_name: Some(format!("env::{var_name}")),
+                signature: None,
+                docstring: None,
+                line_start: 0,
+                line_end: 0,
+                col_start: 0,
+                col_end: 0,
+                visibility: None,
+                is_export: false,
+                metadata: None,
+            });
+
+            if let Some(func_idx) = first_func_idx {
+                edges.push(ExtractedEdge {
+                    source_idx: func_idx,
+                    target_idx: env_idx,
+                    kind: EdgeKind::ReadsEnv,
+                    confidence: 0.9,
+                    context: None,
+                });
+            }
         }
     }
 }

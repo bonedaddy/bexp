@@ -13,6 +13,8 @@ pub struct Observation {
     pub created_at: String,
     pub is_stale: bool,
     pub stale_reason: Option<String>,
+    pub consolidated_into: Option<i64>,
+    pub anti_pattern: Option<String>,
 }
 
 pub fn insert_observation(
@@ -40,7 +42,8 @@ pub fn get_observations_for_session(
     session_id: &str,
 ) -> Result<Vec<Observation>> {
     let mut stmt = conn.prepare(
-        "SELECT id, session_id, content, headline, summary, created_at, is_stale, stale_reason
+        "SELECT id, session_id, content, headline, summary, created_at, is_stale, stale_reason,
+                consolidated_into, anti_pattern
          FROM observations
          WHERE session_id = ?1
          ORDER BY created_at ASC",
@@ -56,6 +59,8 @@ pub fn get_observations_for_session(
                 created_at: row.get(5)?,
                 is_stale: row.get::<_, i32>(6)? != 0,
                 stale_reason: row.get(7)?,
+                consolidated_into: row.get(8)?,
+                anti_pattern: row.get(9)?,
             })
         })?
         .filter_map(|r| match r {

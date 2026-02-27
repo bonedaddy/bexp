@@ -123,6 +123,12 @@ pub fn get_rules(lang: Language) -> SkeletonRules {
                 "declaration",
             ],
         },
+        Language::Dotenv => SkeletonRules {
+            collapsible: vec![],
+            body_kinds: vec![],
+            removable: vec![],
+            significant_children: vec![],
+        },
         Language::Cpp => SkeletonRules {
             collapsible: vec!["function_definition", "namespace_definition"],
             body_kinds: vec![

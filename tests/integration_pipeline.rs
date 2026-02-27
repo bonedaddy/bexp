@@ -55,7 +55,7 @@ fn full_index_then_graph_has_correct_topology() -> Result<()> {
 
     let config = Arc::new(BexpConfig::default());
     let db = Arc::new(Database::open(&config.db_path(workspace.path()))?);
-    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf());
+    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf(), vec![]);
 
     let report = indexer.full_index()?;
     assert_eq!(report.file_count, 2);
@@ -96,7 +96,12 @@ fn capsule_generation_returns_relevant_content() -> Result<()> {
 
     let config = Arc::new(BexpConfig::default());
     let db = Arc::new(Database::open(&config.db_path(workspace.path()))?);
-    let indexer = IndexerService::new(db.clone(), config.clone(), workspace.path().to_path_buf());
+    let indexer = IndexerService::new(
+        db.clone(),
+        config.clone(),
+        workspace.path().to_path_buf(),
+        vec![],
+    );
 
     indexer.full_index()?;
 
@@ -120,7 +125,7 @@ fn incremental_reindex_updates_graph() -> Result<()> {
 
     let config = Arc::new(BexpConfig::default());
     let db = Arc::new(Database::open(&config.db_path(workspace.path()))?);
-    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf());
+    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf(), vec![]);
 
     indexer.full_index()?;
 
@@ -173,7 +178,7 @@ impl Widget {
 
     let config = Arc::new(BexpConfig::default());
     let db = Arc::new(Database::open(&config.db_path(workspace.path()))?);
-    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf());
+    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf(), vec![]);
 
     indexer.full_index()?;
 
@@ -210,7 +215,7 @@ fn memory_observations_persist_across_sessions() -> Result<()> {
 
     let config = Arc::new(BexpConfig::default());
     let db = Arc::new(Database::open(&config.db_path(workspace.path()))?);
-    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf());
+    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf(), vec![]);
 
     indexer.full_index()?;
 
@@ -256,7 +261,7 @@ fn multi_language_indexing() -> Result<()> {
 
     let config = Arc::new(BexpConfig::default());
     let db = Arc::new(Database::open(&config.db_path(workspace.path()))?);
-    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf());
+    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf(), vec![]);
 
     let report = indexer.full_index()?;
     assert_eq!(report.file_count, 3, "should index exactly 3 files");
@@ -300,7 +305,7 @@ fn cross_file_references_create_call_edges() -> Result<()> {
 
     let config = Arc::new(BexpConfig::default());
     let db = Arc::new(Database::open(&config.db_path(workspace.path()))?);
-    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf());
+    let indexer = IndexerService::new(db.clone(), config, workspace.path().to_path_buf(), vec![]);
 
     indexer.full_index()?;
 

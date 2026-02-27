@@ -231,6 +231,69 @@ CREATE INDEX IF NOT EXISTS idx_edges_source_kind ON edges(source_node_id, kind);
 CREATE INDEX IF NOT EXISTS idx_nodes_file_line_range ON nodes(file_id, line_start, line_end);
 "#;
 
+/// Migration 6: Add file_path to FTS5 index so queries can match file paths.
+/// Uses contentless FTS5 (content='') since we only use MATCH + rank, never highlight/snippet.
+const M6_FTS_FILE_PATH: &str = r#"
+DROP TRIGGER IF EXISTS nodes_ai;
+DROP TRIGGER IF EXISTS nodes_ad;
+DROP TRIGGER IF EXISTS nodes_au;
+DROP TABLE IF EXISTS nodes_fts;
+
+CREATE VIRTUAL TABLE nodes_fts USING fts5(
+    name,
+    qualified_name,
+    tokenized_name,
+    tokenized_qualified_name,
+    signature,
+    docstring,
+    file_path,
+    content='',
+    content_rowid='id'
+);
+
+CREATE TRIGGER nodes_ai AFTER INSERT ON nodes BEGIN
+    INSERT INTO nodes_fts(rowid, name, qualified_name, tokenized_name, tokenized_qualified_name, signature, docstring, file_path)
+    VALUES (new.id, new.name, new.qualified_name, new.tokenized_name, new.tokenized_qualified_name, new.signature, new.docstring,
+            (SELECT path FROM files WHERE id = new.file_id));
+END;
+
+CREATE TRIGGER nodes_ad AFTER DELETE ON nodes BEGIN
+    INSERT INTO nodes_fts(nodes_fts, rowid, name, qualified_name, tokenized_name, tokenized_qualified_name, signature, docstring, file_path)
+    VALUES ('delete', old.id, old.name, old.qualified_name, old.tokenized_name, old.tokenized_qualified_name, old.signature, old.docstring,
+            COALESCE((SELECT path FROM files WHERE id = old.file_id), ''));
+END;
+
+CREATE TRIGGER nodes_au AFTER UPDATE ON nodes BEGIN
+    INSERT INTO nodes_fts(nodes_fts, rowid, name, qualified_name, tokenized_name, tokenized_qualified_name, signature, docstring, file_path)
+    VALUES ('delete', old.id, old.name, old.qualified_name, old.tokenized_name, old.tokenized_qualified_name, old.signature, old.docstring,
+            COALESCE((SELECT path FROM files WHERE id = old.file_id), ''));
+    INSERT INTO nodes_fts(rowid, name, qualified_name, tokenized_name, tokenized_qualified_name, signature, docstring, file_path)
+    VALUES (new.id, new.name, new.qualified_name, new.tokenized_name, new.tokenized_qualified_name, new.signature, new.docstring,
+            (SELECT path FROM files WHERE id = new.file_id));
+END;
+"#;
+
+/// Migration 7: Repopulate FTS5 index from existing node data.
+/// M6 recreated the FTS table (contentless) but didn't backfill existing nodes,
+/// so the FTS index is empty unless a full re-index has run since M6.
+const M7_FTS_BACKFILL: &str = r#"
+INSERT OR IGNORE INTO nodes_fts(rowid, name, qualified_name, tokenized_name, tokenized_qualified_name, signature, docstring, file_path)
+SELECT n.id, n.name, n.qualified_name, n.tokenized_name, n.tokenized_qualified_name, n.signature, n.docstring, f.path
+FROM nodes n
+JOIN files f ON f.id = n.file_id;
+"#;
+
+/// Migration 8: Observation consolidation, anti-patterns, and structural diff support.
+const M8_CONSOLIDATION_AND_STRUCTURE: &str = r#"
+ALTER TABLE observations ADD COLUMN consolidated_into INTEGER REFERENCES observations(id);
+ALTER TABLE observations ADD COLUMN anti_pattern TEXT;
+CREATE INDEX IF NOT EXISTS idx_observations_consolidated ON observations(consolidated_into);
+CREATE INDEX IF NOT EXISTS idx_observations_stale ON observations(is_stale);
+
+ALTER TABLE files ADD COLUMN structure_hash TEXT;
+CREATE INDEX IF NOT EXISTS idx_files_structure_hash ON files(structure_hash);
+"#;
+
 pub fn migrations() -> Migrations<'static> {
     Migrations::new(vec![
         M::up(M1_BASELINE),
@@ -238,5 +301,8 @@ pub fn migrations() -> Migrations<'static> {
         M::up(M3_CONTROL_FLOW),
         M::up(M4_CROSS_WORKSPACE),
         M::up(M5_RESOLVER_INDEXES),
+        M::up(M6_FTS_FILE_PATH),
+        M::up(M7_FTS_BACKFILL),
+        M::up(M8_CONSOLIDATION_AND_STRUCTURE),
     ])
 }

@@ -75,6 +75,7 @@ impl TestServerBuilder {
             db.clone(),
             config.clone(),
             workspace.path().to_path_buf(),
+            vec![],
         ));
 
         // Index files if any were provided
