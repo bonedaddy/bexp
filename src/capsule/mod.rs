@@ -170,7 +170,7 @@ impl CapsuleGenerator {
             &self.skeletonizer,
             &local_results,
             code_budget,
-            self.config.default_skeleton_level,
+            &intent,
             Some(&self.graph),
             &self.config,
         )?;

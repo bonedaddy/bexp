@@ -60,11 +60,13 @@ pub struct SearchResult {
     pub score: f64,
     /// Workspace name for cross-workspace results, None for local.
     pub workspace: Option<String>,
+    /// Cluster ID for grouping similar results together
+    pub cluster_id: Option<String>,
 }
 
 /// Perform hybrid search combining FTS5 BM25, TF-IDF approximation, graph centrality,
 /// and edge confidence. Falls back to LIKE-based search if FTS5 returns nothing.
-/// If `external_dbs` is provided, also searches external workspace databases.
+#[allow(dead_code)]
 pub fn hybrid_search(
     conn: &Connection,
     graph: &GraphEngine,
@@ -75,7 +77,8 @@ pub fn hybrid_search(
     hybrid_search_with_external(conn, graph, query, intent, limit, None)
 }
 
-/// Perform hybrid search with optional external workspace databases.
+/// Like `hybrid_search` but also searches external workspace databases
+/// when `external_dbs` is provided.
 pub fn hybrid_search_with_external(
     conn: &Connection,
     graph: &GraphEngine,
@@ -162,6 +165,7 @@ pub fn hybrid_search_with_external(
                 file_path: nwf.file_path.clone(),
                 score,
                 workspace: None,
+                cluster_id: None,
             });
         }
     } else {
@@ -196,6 +200,7 @@ pub fn hybrid_search_with_external(
                 file_path: r.file_path.clone(),
                 score,
                 workspace: None,
+                cluster_id: None,
             });
         }
     }
@@ -233,6 +238,7 @@ pub fn hybrid_search_with_external(
                         file_path: r.file_path.clone(),
                         score,
                         workspace: Some(ws_name.clone()),
+                        cluster_id: None,
                     });
                 }
             }
@@ -246,6 +252,25 @@ pub fn hybrid_search_with_external(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     results.truncate(limit);
+
+    // Assign cluster IDs based on directory (Heuristic 1)
+    let mut dir_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for r in &results {
+        if let Some(parent) = std::path::Path::new(&r.file_path).parent() {
+            let dir = parent.to_string_lossy().to_string();
+            *dir_counts.entry(dir).or_insert(0) += 1;
+        }
+    }
+    
+    for r in &mut results {
+        if let Some(parent) = std::path::Path::new(&r.file_path).parent() {
+            let dir = parent.to_string_lossy().to_string();
+            if dir_counts.get(&dir).copied().unwrap_or(0) > 2 {
+                // If more than 2 results share a directory, group them
+                r.cluster_id = Some(dir);
+            }
+        }
+    }
 
     Ok(results)
 }

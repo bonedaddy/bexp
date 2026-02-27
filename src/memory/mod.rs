@@ -122,11 +122,22 @@ impl MemoryService {
 
         let mut output = String::new();
         for result in &results {
-            let stale = if result.is_stale { " [STALE]" } else { "" };
+            let mut markers = String::new();
+            if result.is_stale {
+                markers.push_str(" [STALE]");
+            }
+            if result.consolidated_into.is_some() {
+                markers.push_str(" [CONSOLIDATED]");
+            }
+            if let Some(reason) = &result.stale_reason {
+                if reason != "consolidated" {
+                    markers.push_str(&format!(" [STALE: {reason}]"));
+                }
+            }
             output.push_str(&format!(
                 "- **{}**{} (score: {:.2}, {})\n  {}\n\n",
                 result.headline.as_deref().unwrap_or("Observation"),
-                stale,
+                markers,
                 result.score,
                 result.created_at,
                 result.summary.as_deref().unwrap_or(&result.content),

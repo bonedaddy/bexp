@@ -93,5 +93,32 @@ pub fn assemble_capsule(
         }
     }
 
+    // Cluster rollups
+    if !allocation.rollups.is_empty() {
+        output.push_str("---\n\n## Related Code Clusters\n\n");
+        for rollup in &allocation.rollups {
+            output.push_str(&format!(
+                "**Cluster: `{}`**\n- Detailed above: `{}`\n- Also matched (similar structure):\n",
+                rollup.cluster_name, rollup.representative_file
+            ));
+            for (path, node_name) in &rollup.matched_siblings {
+                output.push_str(&format!("  - `{}` (node: `{}`)\n", path, node_name));
+            }
+            output.push('\n');
+        }
+    }
+
+    // Unallocated matches
+    if !allocation.unallocated_matches.is_empty() {
+        output.push_str("---\n\n## ⚠️ Context Truncated\n\n");
+        output.push_str("The following files matched the query but were omitted to stay within the token budget. Use specific `read_file` or narrower search queries to inspect them:\n\n");
+        for match_ in &allocation.unallocated_matches {
+            output.push_str(&format!(
+                "- `{}` (score: {:.2})\n",
+                match_.path, match_.score
+            ));
+        }
+    }
+
     Ok(output)
 }

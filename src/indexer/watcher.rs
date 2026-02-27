@@ -100,8 +100,21 @@ impl FileWatcher {
                             files = report.file_count,
                             nodes = report.node_count,
                             edges = report.edge_count,
+                            structure_skipped = report.structure_skip_count,
+                            structural_changes = report.structural_changes.len(),
                             "Incremental reindex complete"
                         );
+                        for change in &report.structural_changes {
+                            let added = change.added_nodes.len();
+                            let removed = change.removed_nodes.len();
+                            let modified = change.modified_nodes.len();
+                            let renamed = change.renamed_nodes.len();
+                            tracing::info!(
+                                file = %change.file_path,
+                                added, removed, modified, renamed,
+                                "Structural change detected"
+                            );
+                        }
                         // Incremental graph update instead of full rebuild
                         if !report.changed_file_ids.is_empty() {
                             match db.reader() {

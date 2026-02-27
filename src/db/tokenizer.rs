@@ -81,6 +81,7 @@ fn split_camel_case(s: &str, out: &mut Vec<String>) {
 
 /// Tokenize a search query so FTS5 can match against tokenized columns.
 /// Also strips FTS5 special characters (-, :, *, ", ^) to prevent query injection.
+#[allow(dead_code)]
 pub fn tokenize_query(query: &str) -> String {
     query
         .split_whitespace()

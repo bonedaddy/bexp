@@ -151,6 +151,7 @@ impl Skeletonizer {
         SkeletonTransformer::transform(source, lang, level)
     }
 
+    #[allow(dead_code)]
     pub fn count_tokens(&self, text: &str) -> usize {
         self.token_counter.count(text)
     }

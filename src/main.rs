@@ -249,6 +249,8 @@ async fn serve(workspace_root: PathBuf, health_port_override: Option<u16>) -> an
                     files = report.file_count,
                     nodes = report.node_count,
                     edges = report.edge_count,
+                    structure_skipped = report.structure_skip_count,
+                    structural_changes = report.structural_changes.len(),
                     "Initial index complete"
                 );
 

@@ -7,8 +7,7 @@ use crate::db::queries;
 use crate::error::Result;
 use crate::graph::GraphEngine;
 use crate::skeleton::Skeletonizer;
-use crate::types::{DetailLevel, Language};
-
+use crate::types::{DetailLevel, Language, Intent};
 use super::search::SearchResult;
 
 #[derive(Debug)]
@@ -19,8 +18,25 @@ pub struct BudgetAllocation {
     pub bridges: Vec<BridgeExcerpt>,
     /// Files to include as skeletons
     pub skeletons: Vec<SkeletonFile>,
+    /// Collapsed summary of matching files grouped by cluster
+    pub rollups: Vec<ClusterRollup>,
+    /// Files that matched but were dropped due to budget constraints
+    pub unallocated_matches: Vec<UnallocatedMatch>,
     /// Total tokens used
     pub total_tokens: usize,
+}
+
+#[derive(Debug)]
+pub struct ClusterRollup {
+    pub cluster_name: String,
+    pub representative_file: String,
+    pub matched_siblings: Vec<(String, String)>, // (file_path, matching_node_name)
+}
+
+#[derive(Debug)]
+pub struct UnallocatedMatch {
+    pub path: String,
+    pub score: f64,
 }
 
 #[derive(Debug)]
@@ -77,7 +93,7 @@ pub fn allocate(
     skeletonizer: &Skeletonizer,
     search_results: &[SearchResult],
     budget: usize,
-    _default_level: DetailLevel,
+    intent: &Intent,
     graph: Option<&GraphEngine>,
     config: &BexpConfig,
 ) -> Result<BudgetAllocation> {
@@ -85,6 +101,8 @@ pub fn allocate(
         pivots: Vec::new(),
         bridges: Vec::new(),
         skeletons: Vec::new(),
+        rollups: Vec::new(),
+        unallocated_matches: Vec::new(),
         total_tokens: 0,
     };
 
@@ -121,15 +139,13 @@ pub fn allocate(
 
     // Build file score map from search results
     let mut file_scores: HashMap<i64, f64> = HashMap::new();
+    let mut file_results: HashMap<i64, &SearchResult> = HashMap::new();
     for result in search_results {
-        file_scores
-            .entry(result.file_id)
-            .and_modify(|s| {
-                if result.score > *s {
-                    *s = result.score;
-                }
-            })
-            .or_insert(result.score);
+        let current_score = file_scores.entry(result.file_id).or_insert(result.score);
+        if result.score >= *current_score {
+            *current_score = result.score;
+            file_results.insert(result.file_id, result);
+        }
     }
 
     // Sort files by highest score
@@ -177,9 +193,20 @@ pub fn allocate(
         };
         let total_lines = content.lines().count();
 
+        // Phase 3: Sniper Snippets for Usage Intent
+        let is_usage_intent = matches!(intent, Intent::BlastRadius);
+        let padding = if is_usage_intent {
+            config.context_padding.min(2) // Tighter padding for snippets
+        } else {
+            config.context_padding
+        };
+
         // Decide: full file or excerpt
-        let use_full_file =
-            total_lines < 50 || (total_node_count > 0 && matched_count * 2 >= total_node_count);
+        let use_full_file = if is_usage_intent {
+            false // Force snippets for usage discovery
+        } else {
+            total_lines < 50 || (total_node_count > 0 && matched_count * 2 >= total_node_count)
+        };
 
         if use_full_file {
             let tokens = skeletonizer.count_tokens_fast(&content);
@@ -206,7 +233,7 @@ pub fn allocate(
                 .iter()
                 .map(|r| (r.line_start as usize, r.line_end as usize, r.name.clone()))
                 .collect();
-            let merged = merge_ranges(&raw_ranges, total_lines, config.context_padding);
+            let merged = merge_ranges(&raw_ranges, total_lines, padding);
 
             for mr in merged {
                 let excerpt = extract_lines(&content, mr.line_start, mr.line_end);
@@ -279,16 +306,54 @@ pub fn allocate(
     // Skeleton files: remaining files from search results not already included
     let max_score = search_results.first().map(|r| r.score).unwrap_or(1.0);
     let high_threshold = max_score * 0.7;
-    let medium_threshold = max_score * 0.4;
 
-    // Deduplicate and get remaining files
+    // Phase 1: Clusters & Rollups
+    let mut seen_clusters: HashMap<String, String> = HashMap::new();
+    for pivot in &allocation.pivots {
+        if let Some(r) = file_results.get(&pivot.file_id) {
+            if let Some(cid) = &r.cluster_id {
+                seen_clusters.insert(cid.clone(), r.file_path.clone());
+            }
+        }
+    }
+
     let mut skeleton_files: Vec<(i64, f64)> = Vec::new();
     let mut skel_seen = HashSet::new();
+    let mut cluster_rollups_map: HashMap<String, ClusterRollup> = HashMap::new();
+
     for result in search_results {
-        if !seen_files.contains(&result.file_id) && skel_seen.insert(result.file_id) {
+        if seen_files.contains(&result.file_id) {
+            continue;
+        }
+
+        if let Some(cid) = &result.cluster_id {
+            if let Some(rep_file) = seen_clusters.get(cid) {
+                // We already have a representative for this cluster
+                let rollup = cluster_rollups_map.entry(cid.clone()).or_insert_with(|| ClusterRollup {
+                    cluster_name: cid.clone(),
+                    representative_file: rep_file.clone(),
+                    matched_siblings: Vec::new(),
+                });
+                rollup.matched_siblings.push((result.file_path.clone(), result.name.clone()));
+                seen_files.insert(result.file_id); // Mark as seen so we skip skeleton
+                continue;
+            } else {
+                seen_clusters.insert(cid.clone(), result.file_path.clone());
+            }
+        }
+
+        if skel_seen.insert(result.file_id) {
             skeleton_files.push((result.file_id, result.score));
         }
     }
+
+    // Phase 2: Dynamic Level-of-Detail
+    let significant_files = file_scores.values().filter(|&&s| s > high_threshold).count();
+    let dynamic_preferred_level = match significant_files {
+        0..=3 => DetailLevel::Detailed,
+        4..=10 => DetailLevel::Standard,
+        _ => DetailLevel::Minimal,
+    };
 
     // Pre-fetch skeleton data for candidate files in one batch query
     let skel_file_ids: Vec<i64> = skeleton_files
@@ -303,12 +368,26 @@ pub fn allocate(
         if skeleton_remaining < config.min_skeleton_budget
             || allocation.skeletons.len() >= config.max_skeleton_files
         {
-            break;
+            if let Some(r) = file_results.get(&file_id) {
+                allocation.unallocated_matches.push(UnallocatedMatch {
+                    path: r.file_path.clone(),
+                    score,
+                });
+            }
+            continue;
         }
 
         let cached_row = match skel_cache.get(&file_id) {
             Some(r) => r,
-            None => continue,
+            None => {
+                if let Some(r) = file_results.get(&file_id) {
+                    allocation.unallocated_matches.push(UnallocatedMatch {
+                        path: r.file_path.clone(),
+                        score,
+                    });
+                }
+                continue;
+            }
         };
 
         let ext = std::path::Path::new(&cached_row.path)
@@ -317,18 +396,18 @@ pub fn allocate(
             .unwrap_or("");
         let lang = match Language::from_extension(ext) {
             Some(l) => l,
-            None => continue,
+            None => {
+                if let Some(r) = file_results.get(&file_id) {
+                    allocation.unallocated_matches.push(UnallocatedMatch {
+                        path: r.file_path.clone(),
+                        score,
+                    });
+                }
+                continue;
+            }
         };
 
-        let preferred_level = if score >= high_threshold {
-            DetailLevel::Detailed
-        } else if score >= medium_threshold {
-            DetailLevel::Standard
-        } else {
-            DetailLevel::Minimal
-        };
-
-        let levels_to_try = match preferred_level {
+        let levels_to_try = match dynamic_preferred_level {
             DetailLevel::Detailed => vec![
                 DetailLevel::Detailed,
                 DetailLevel::Standard,
@@ -367,7 +446,15 @@ pub fn allocate(
 
         let (skeleton, tokens, level) = match chosen {
             Some(c) => c,
-            None => continue,
+            None => {
+                if let Some(r) = file_results.get(&file_id) {
+                    allocation.unallocated_matches.push(UnallocatedMatch {
+                        path: r.file_path.clone(),
+                        score,
+                    });
+                }
+                continue;
+            }
         };
 
         skeleton_remaining -= tokens;
@@ -379,6 +466,8 @@ pub fn allocate(
             level,
         });
     }
+
+    allocation.rollups = cluster_rollups_map.into_values().collect();
 
     tracing::debug!(
         skeleton_count = allocation.skeletons.len(),

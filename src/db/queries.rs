@@ -75,6 +75,7 @@ pub fn get_index_stats(conn: &Connection) -> Result<IndexStats> {
     })
 }
 
+#[allow(dead_code)]
 pub fn insert_file(
     conn: &Connection,
     path: &str,
@@ -282,6 +283,7 @@ pub fn get_all_edges(conn: &Connection) -> Result<Vec<EdgeRecord>> {
     Ok(rows)
 }
 
+#[allow(dead_code)]
 pub fn search_nodes_fts(conn: &Connection, query: &str, limit: usize) -> Result<Vec<(i64, f64)>> {
     // Tokenize the query so FTS5 can match against tokenized columns
     let tokenized = crate::db::tokenizer::tokenize_query(query);
@@ -296,6 +298,7 @@ pub fn search_nodes_fts(conn: &Connection, query: &str, limit: usize) -> Result<
 
 /// Execute a pre-sanitized FTS5 query directly (no additional tokenization).
 /// Use this when the caller has already built a valid FTS5 query string.
+#[allow(dead_code)]
 pub fn search_nodes_fts_raw(
     conn: &Connection,
     fts_query: &str,
@@ -357,6 +360,7 @@ pub fn search_nodes_fts_full(
     Ok(rows)
 }
 
+#[allow(dead_code)]
 pub fn get_file_by_id(conn: &Connection, id: i64) -> Result<Option<FileRecord>> {
     let mut stmt = conn.prepare(
         "SELECT id, path, language, content_hash, mtime_ns, size_bytes, token_count
@@ -1207,6 +1211,7 @@ pub fn get_nodes_with_files_by_ids(
 }
 
 /// Get total node count for a file.
+#[allow(dead_code)]
 pub fn get_file_node_count(conn: &Connection, file_id: i64) -> Result<i64> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM nodes WHERE file_id = ?1",
