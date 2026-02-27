@@ -265,15 +265,15 @@ async fn serve(workspace_root: PathBuf, health_port_override: Option<u16>) -> an
                     );
                 }
 
-                // Pre-warm skeleton cache for all indexed files before marking ready
+                // Mark index as ready immediately so MCP tools are available
+                startup_indexer.set_index_ready(true);
+
+                // Pre-warm skeleton cache in background (non-blocking)
                 if let Err(e) = startup_skeletonizer
                     .prewarm_skeletons(startup_config.default_skeleton_level)
                 {
                     tracing::warn!(error = %e, "Skeleton pre-warm failed");
                 }
-
-                // Mark index as ready
-                startup_indexer.set_index_ready(true);
 
                 // Run LSP resolution if enabled
                 if startup_config.lsp_resolution {

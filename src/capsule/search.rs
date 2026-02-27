@@ -35,6 +35,14 @@ const CODE_STOP_WORDS: &[&str] = &[
     "search",
     "look",
     "where",
+    "works",
+    "work",
+    "use",
+    "used",
+    "using",
+    "codebase",
+    "project",
+    "repository",
 ];
 
 #[derive(Debug, Clone)]
@@ -50,10 +58,13 @@ pub struct SearchResult {
     #[allow(dead_code)]
     pub file_path: String,
     pub score: f64,
+    /// Workspace name for cross-workspace results, None for local.
+    pub workspace: Option<String>,
 }
 
 /// Perform hybrid search combining FTS5 BM25, TF-IDF approximation, graph centrality,
 /// and edge confidence. Falls back to LIKE-based search if FTS5 returns nothing.
+/// If `external_dbs` is provided, also searches external workspace databases.
 pub fn hybrid_search(
     conn: &Connection,
     graph: &GraphEngine,
@@ -61,11 +72,40 @@ pub fn hybrid_search(
     intent: &Intent,
     limit: usize,
 ) -> Result<Vec<SearchResult>> {
+    hybrid_search_with_external(conn, graph, query, intent, limit, None)
+}
+
+/// Perform hybrid search with optional external workspace databases.
+pub fn hybrid_search_with_external(
+    conn: &Connection,
+    graph: &GraphEngine,
+    query: &str,
+    intent: &Intent,
+    limit: usize,
+    external_dbs: Option<&[(String, Connection)]>,
+) -> Result<Vec<SearchResult>> {
     let (bm25_weight, tfidf_weight, centrality_weight, confidence_weight) = intent_weights(intent);
+    // Path bonus: additive boost for results whose file path contains query terms.
+    // 0.15 is enough to meaningfully re-rank without overwhelming other signals.
+    let path_weight = 0.15;
 
     // 1. Combined FTS5 BM25 search + node/file data in a single query
-    let fts_query = sanitize_fts_query(query);
-    let fts_results = queries::search_nodes_fts_full(conn, &fts_query, limit * 2)?;
+    // Strategy: try AND first for precise results, fall back to OR for broader matches.
+    let fts_and_query = sanitize_fts_query_and(query);
+    let fts_or_query = sanitize_fts_query(query);
+
+    let fts_results = if fts_and_query != fts_or_query {
+        let and_results =
+            queries::search_nodes_fts_full(conn, &fts_and_query, limit * 2)?;
+        if and_results.len() >= 5 {
+            and_results
+        } else {
+            // AND too narrow, use OR
+            queries::search_nodes_fts_full(conn, &fts_or_query, limit * 2)?
+        }
+    } else {
+        queries::search_nodes_fts_full(conn, &fts_or_query, limit * 2)?
+    };
 
     // 2. If FTS5 found nothing, fall back to LIKE-based search
     let (fts_results, use_like_fallback) = if fts_results.is_empty() {
@@ -79,13 +119,19 @@ pub fn hybrid_search(
         (fts_results, None)
     };
 
-    // Batch-fetch edge confidence for all result node IDs
+    // Edge confidence lookup: only worth the cost for small result sets
+    // (the batch query is expensive for 100+ node IDs).
+    // For larger sets, use default confidence to avoid ~5ms overhead.
     let node_ids: Vec<i64> = if let Some(ref like) = use_like_fallback {
         like.iter().map(|(id, _)| *id).collect()
     } else {
         fts_results.iter().map(|r| r.node_id).collect()
     };
-    let confidence_map = queries::get_avg_edge_confidence_batch(conn, &node_ids)?;
+    let confidence_map = if node_ids.len() <= 30 {
+        queries::get_avg_edge_confidence_batch(conn, &node_ids)?
+    } else {
+        std::collections::HashMap::new() // default 0.5 via unwrap_or below
+    };
 
     let mut results: Vec<SearchResult> = Vec::new();
 
@@ -101,10 +147,12 @@ pub fn hybrid_search(
             let centrality = graph.get_pagerank(nwf.node_id);
             let centrality_norm = (centrality * 1000.0).min(1.0);
             let confidence_norm = confidence_map.get(node_id).copied().unwrap_or(0.5);
+            let path_bonus = compute_path_bonus(query, &nwf.file_path);
             let score = bm25_weight * bm25_raw.abs()
                 + tfidf_weight * tfidf
                 + centrality_weight * centrality_norm
-                + confidence_weight * confidence_norm;
+                + confidence_weight * confidence_norm
+                + path_weight * path_bonus;
             results.push(SearchResult {
                 node_id: nwf.node_id,
                 file_id: nwf.file_id,
@@ -113,6 +161,7 @@ pub fn hybrid_search(
                 kind: nwf.kind.clone(),
                 file_path: nwf.file_path.clone(),
                 score,
+                workspace: None,
             });
         }
     } else {
@@ -132,10 +181,12 @@ pub fn hybrid_search(
             let centrality = graph.get_pagerank(r.node_id);
             let centrality_norm = (centrality * 1000.0).min(1.0);
             let confidence_norm = confidence_map.get(&r.node_id).copied().unwrap_or(0.5);
+            let path_bonus = compute_path_bonus(query, &r.file_path);
             let score = bm25_weight * bm25_norm
                 + tfidf_weight * tfidf
                 + centrality_weight * centrality_norm
-                + confidence_weight * confidence_norm;
+                + confidence_weight * confidence_norm
+                + path_weight * path_bonus;
             results.push(SearchResult {
                 node_id: r.node_id,
                 file_id: r.file_id,
@@ -144,7 +195,47 @@ pub fn hybrid_search(
                 kind: r.kind.clone(),
                 file_path: r.file_path.clone(),
                 score,
+                workspace: None,
             });
+        }
+    }
+
+    // Cross-workspace search: query external DBs with 0.85x score penalty
+    if let Some(ext_dbs) = external_dbs {
+        let fts_query = &fts_or_query;
+        for (ws_name, ext_conn) in ext_dbs {
+            if let Ok(ext_results) = queries::search_nodes_fts_full(ext_conn, fts_query, limit) {
+                let ext_max_bm25 = ext_results
+                    .iter()
+                    .map(|r| r.rank.abs())
+                    .fold(0.0_f64, f64::max);
+
+                for r in &ext_results {
+                    let bm25_norm = if ext_max_bm25 > 0.0 {
+                        r.rank.abs() / ext_max_bm25
+                    } else {
+                        0.0
+                    };
+                    let tfidf = compute_tfidf_score(query, &r.name, r.signature.as_deref());
+                    let path_bonus = compute_path_bonus(query, &r.file_path);
+                    // External results: no graph centrality or confidence (separate graph)
+                    let score = (bm25_weight * bm25_norm
+                        + tfidf_weight * tfidf
+                        + path_weight * path_bonus)
+                        * 0.85; // Cross-workspace penalty
+
+                    results.push(SearchResult {
+                        node_id: r.node_id,
+                        file_id: r.file_id,
+                        name: r.name.clone(),
+                        qualified_name: r.qualified_name.clone(),
+                        kind: r.kind.clone(),
+                        file_path: r.file_path.clone(),
+                        score,
+                        workspace: Some(ws_name.clone()),
+                    });
+                }
+            }
         }
     }
 
@@ -280,7 +371,10 @@ pub fn sanitize_fts_query(query: &str) -> String {
             let parts = split_camel_for_fts(&cleaned);
             for part in parts {
                 let lower = part.to_lowercase();
-                if lower.len() > 1 && !STOP_WORDS.contains(&lower.as_str()) {
+                if lower.len() > 1
+                    && !STOP_WORDS.contains(&lower.as_str())
+                    && !CODE_STOP_WORDS.contains(&lower.as_str())
+                {
                     if !subterms.contains(&lower) {
                         subterms.push(lower);
                     }
@@ -314,6 +408,50 @@ pub fn sanitize_fts_query(query: &str) -> String {
     } else {
         word_groups.join(" OR ")
     }
+}
+
+/// Like `sanitize_fts_query` but flattens all terms into a single implicit AND
+/// (space-separated, no OR). Gives more precise results when multiple terms are present.
+pub fn sanitize_fts_query_and(query: &str) -> String {
+    let mut all_terms: Vec<String> = Vec::new();
+
+    for word in query.split_whitespace() {
+        for segment in word.split(['-', '/', ':', '.', '_']) {
+            if segment.is_empty() {
+                continue;
+            }
+            let cleaned: String = segment
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect();
+            if cleaned.is_empty() {
+                continue;
+            }
+            let parts = split_camel_for_fts(&cleaned);
+            for part in parts {
+                let lower = part.to_lowercase();
+                if lower.len() > 1
+                    && !STOP_WORDS.contains(&lower.as_str())
+                    && !CODE_STOP_WORDS.contains(&lower.as_str())
+                {
+                    if !all_terms.contains(&lower) {
+                        all_terms.push(lower);
+                    }
+                }
+            }
+        }
+    }
+
+    if all_terms.is_empty() {
+        let cleaned: String = query
+            .chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '_')
+            .collect();
+        return cleaned;
+    }
+
+    // Join with spaces = implicit AND in FTS5 (no parentheses, no OR)
+    all_terms.join(" ")
 }
 
 /// Split a camelCase/PascalCase string into parts for FTS query.
@@ -357,26 +495,94 @@ fn compute_tfidf_score(query: &str, name: &str, signature: Option<&str>) -> f64 
     let query_terms: Vec<String> = query
         .to_lowercase()
         .split_whitespace()
+        .filter(|w| w.len() > 1 && !STOP_WORDS.contains(w))
         .map(String::from)
         .collect();
 
-    let name_lower = name.to_lowercase();
-    let sig_lower = signature.map(|s| s.to_lowercase()).unwrap_or_default();
+    if query_terms.is_empty() {
+        return 0.0;
+    }
+
+    // Split name and signature into word tokens for boundary-aware matching
+    let name_words = tokenize_identifier(name);
+    let sig_words = signature.map(|s| tokenize_identifier(s)).unwrap_or_default();
 
     let mut matches = 0.0;
     for term in &query_terms {
-        if name_lower.contains(term.as_str()) {
+        if name_words.iter().any(|w| w == term) {
             matches += 2.0; // Name match is worth more
         }
-        if sig_lower.contains(term.as_str()) {
+        if sig_words.iter().any(|w| w == term) {
             matches += 1.0;
         }
     }
 
     let total_terms = query_terms.len() as f64;
-    if total_terms > 0.0 {
-        (matches / (total_terms * 3.0)).min(1.0)
-    } else {
-        0.0
+    (matches / (total_terms * 3.0)).min(1.0)
+}
+
+/// Split an identifier or signature into lowercase word tokens.
+/// Handles snake_case, camelCase, PascalCase, and punctuation.
+fn tokenize_identifier(s: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    // First split on non-alphanumeric chars (underscores, spaces, punctuation)
+    for segment in s.split(|c: char| !c.is_alphanumeric()) {
+        if segment.is_empty() {
+            continue;
+        }
+        // Then split camelCase/PascalCase
+        let chars: Vec<char> = segment.chars().collect();
+        let mut current = String::new();
+        current.push(chars[0]);
+
+        for i in 1..chars.len() {
+            let prev = chars[i - 1];
+            let cur = chars[i];
+            let is_boundary = (prev.is_lowercase() && cur.is_uppercase())
+                || (i + 1 < chars.len()
+                    && prev.is_uppercase()
+                    && cur.is_uppercase()
+                    && chars[i + 1].is_lowercase());
+            if is_boundary {
+                let lower = current.to_lowercase();
+                if lower.len() > 1 {
+                    words.push(lower);
+                }
+                current = String::new();
+            }
+            current.push(cur);
+        }
+        if !current.is_empty() {
+            let lower = current.to_lowercase();
+            if lower.len() > 1 {
+                words.push(lower);
+            }
+        }
     }
+    words
+}
+
+/// Compute a file path relevance bonus for a result.
+/// Returns a score [0, 1] based on how many query terms appear in the file path.
+fn compute_path_bonus(query: &str, file_path: &str) -> f64 {
+    let terms: Vec<String> = query
+        .to_lowercase()
+        .split_whitespace()
+        .filter(|w| w.len() > 1 && !STOP_WORDS.contains(w) && !CODE_STOP_WORDS.contains(w))
+        .map(String::from)
+        .collect();
+
+    if terms.is_empty() {
+        return 0.0;
+    }
+
+    let path_lower = file_path.to_lowercase();
+    let path_words = tokenize_identifier(&path_lower);
+
+    let matched = terms
+        .iter()
+        .filter(|t| path_words.iter().any(|pw| pw == *t) || path_lower.contains(t.as_str()))
+        .count();
+
+    (matched as f64 / terms.len() as f64).min(1.0)
 }

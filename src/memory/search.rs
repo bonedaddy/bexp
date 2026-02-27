@@ -13,6 +13,8 @@ pub struct MemorySearchResult {
     pub created_at: String,
     pub is_stale: bool,
     pub score: f64,
+    pub stale_reason: Option<String>,
+    pub consolidated_into: Option<i64>,
 }
 
 /// Cross-session hybrid search: FTS5 BM25 + recency decay (7-day half-life) + graph proximity.
@@ -42,12 +44,14 @@ pub fn search_observations(
         return Ok(Vec::new());
     }
 
-    // FTS5 search (includes session_id to avoid N+1 queries for session bonus)
+    // FTS5 search (includes session_id + staleness columns for scoring)
     let mut stmt = conn.prepare(
         "SELECT o.id, o.content, o.headline, o.summary, o.created_at, o.is_stale,
                 observations_fts.rank,
                 julianday('now') - julianday(o.created_at) as age_days,
-                o.session_id
+                o.session_id,
+                o.stale_reason,
+                o.consolidated_into
          FROM observations_fts
          JOIN observations o ON o.id = observations_fts.rowid
          WHERE observations_fts MATCH ?1
@@ -65,6 +69,8 @@ pub fn search_observations(
         f64,
         f64,
         String,
+        Option<String>,
+        Option<i64>,
     );
     let raw_results: Vec<ObservationRow> = stmt
         .query_map(params![fts_query, (limit * 3) as i64], |row| {
@@ -78,6 +84,8 @@ pub fn search_observations(
                 row.get(6)?,
                 row.get(7)?,
                 row.get(8)?,
+                row.get(9)?,
+                row.get(10)?,
             ))
         })?
         .filter_map(|r| match r {
@@ -110,6 +118,8 @@ pub fn search_observations(
         bm25_raw,
         age_days,
         obs_session_id,
+        stale_reason,
+        consolidated_into,
     ) in &raw_results
     {
         // Normalized BM25
@@ -136,8 +146,17 @@ pub fn search_observations(
             0.0
         };
 
-        // Weighted fusion
-        let score = 0.4 * bm25_norm + 0.3 * recency + 0.2 * graph_score + 0.1 + session_bonus;
+        // Staleness penalty: reduce score for stale/consolidated observations
+        let staleness_penalty = compute_staleness_penalty(
+            *is_stale,
+            stale_reason.as_deref(),
+            consolidated_into.is_some(),
+        );
+
+        // Weighted fusion with staleness penalty
+        let base_score =
+            0.4 * bm25_norm + 0.3 * recency + 0.2 * graph_score + 0.1 + session_bonus;
+        let score = base_score * staleness_penalty;
 
         results.push(MemorySearchResult {
             observation_id: *id,
@@ -147,6 +166,8 @@ pub fn search_observations(
             created_at: created_at.clone(),
             is_stale: *is_stale,
             score,
+            stale_reason: stale_reason.clone(),
+            consolidated_into: *consolidated_into,
         });
     }
 
@@ -159,6 +180,27 @@ pub fn search_observations(
 
     tracing::debug!(result_count = results.len(), "Observation search complete");
     Ok(results)
+}
+
+/// Compute a multiplicative penalty for stale/consolidated observations.
+/// Returns 1.0 for fresh, lower for stale.
+fn compute_staleness_penalty(
+    is_stale: bool,
+    stale_reason: Option<&str>,
+    is_consolidated: bool,
+) -> f64 {
+    if !is_stale && !is_consolidated {
+        return 1.0;
+    }
+    if is_consolidated {
+        return 0.3; // Content superseded
+    }
+    match stale_reason {
+        Some("consolidated") => 0.3,
+        Some("linked file changed") => 0.5,
+        Some(_) => 0.4,
+        None => 0.4,
+    }
 }
 
 fn compute_graph_proximity(

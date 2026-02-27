@@ -25,6 +25,7 @@ impl LanguageExtractor for HtmlExtractor {
             nodes,
             edges: Vec::new(),
             unresolved_refs,
+            structure_hash: None,
         }
     }
 }

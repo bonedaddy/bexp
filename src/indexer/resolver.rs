@@ -258,6 +258,65 @@ fn apply_type_preference(base_confidence: f64, edge_kind: &str, node_kind: &str)
     (base_confidence + bonus).min(0.99)
 }
 
+/// Detect shared types: types/interfaces/structs/enums used across 2+ files.
+/// Updates their metadata to include `"shared_type": "true"`.
+pub fn detect_shared_types(conn: &Connection) -> Result<usize> {
+    let shared_ids: Vec<i64> = conn
+        .prepare(
+            "SELECT n.id FROM nodes n
+             JOIN edges e ON e.target_node_id = n.id
+             JOIN nodes src ON src.id = e.source_node_id
+             WHERE n.kind IN ('interface', 'type_alias', 'struct', 'enum')
+             GROUP BY n.id
+             HAVING COUNT(DISTINCT src.file_id) >= 2",
+        )?
+        .query_map([], |row| row.get(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut count = 0;
+    for node_id in &shared_ids {
+        // Get existing metadata
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT metadata FROM nodes WHERE id = ?1",
+                params![node_id],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        let new_metadata = if let Some(ref existing_json) = existing {
+            if let Ok(mut map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(
+                existing_json,
+            ) {
+                map.insert(
+                    "shared_type".to_string(),
+                    serde_json::Value::String("true".to_string()),
+                );
+                serde_json::to_string(&map).unwrap_or_else(|_| {
+                    r#"{"shared_type":"true"}"#.to_string()
+                })
+            } else {
+                r#"{"shared_type":"true"}"#.to_string()
+            }
+        } else {
+            r#"{"shared_type":"true"}"#.to_string()
+        };
+
+        conn.execute(
+            "UPDATE nodes SET metadata = ?1 WHERE id = ?2",
+            params![new_metadata, node_id],
+        )?;
+        count += 1;
+    }
+
+    if count > 0 {
+        tracing::info!(shared_types = count, "Detected shared types");
+    }
+    Ok(count)
+}
+
 /// Check if an import_path (e.g., "./utils/helpers" or "utils/helpers") matches
 /// a file path (e.g., "src/utils/helpers.ts").
 fn path_matches_import(import_path: &str, file_path: &str) -> bool {

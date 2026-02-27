@@ -15,6 +15,10 @@ impl SkeletonTransformer {
             Language::Html => tree_sitter_html::LANGUAGE.into(),
             Language::C => tree_sitter_c::LANGUAGE.into(),
             Language::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+            Language::Dotenv => {
+                // Dotenv files don't have tree-sitter parsing; return source as-is
+                return Ok(source.to_string());
+            }
         };
 
         parser

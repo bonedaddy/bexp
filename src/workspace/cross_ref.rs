@@ -97,6 +97,15 @@ pub fn resolve_cross_workspace(conn: &Connection, config: &BexpConfig) -> Result
     }
 
     tracing::info!(edges = total, "Cross-workspace resolution complete");
+
+    // Mark types involved in cross-workspace edges as shared
+    if total > 0 {
+        let shared = mark_cross_workspace_shared_types(conn).unwrap_or(0);
+        if shared > 0 {
+            tracing::info!(count = shared, "Marked cross-workspace shared types");
+        }
+    }
+
     Ok(total)
 }
 
@@ -128,4 +137,26 @@ fn find_in_external(
     };
 
     conn.query_row(query, params![name], |row| row.get(0)).ok()
+}
+
+/// Mark source nodes of cross-workspace edges as shared types when they are
+/// type-like nodes (interface, type_alias, struct, enum).
+fn mark_cross_workspace_shared_types(conn: &Connection) -> Result<usize> {
+    let type_kinds = ["interface", "type_alias", "struct", "enum"];
+    let mut total = 0;
+
+    for kind in &type_kinds {
+        let updated = conn.execute(
+            "UPDATE nodes SET metadata = json_set(COALESCE(metadata, '{}'), '$.shared_type', 'true')
+             WHERE id IN (
+                 SELECT DISTINCT cwe.source_node_id FROM cross_workspace_edges cwe
+                 JOIN nodes n ON n.id = cwe.source_node_id
+                 WHERE n.kind = ?1
+             )",
+            params![kind],
+        )?;
+        total += updated;
+    }
+
+    Ok(total)
 }

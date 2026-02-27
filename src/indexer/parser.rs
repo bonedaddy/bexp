@@ -36,6 +36,7 @@ impl ParserPool {
             .try_recv()
             .unwrap_or_else(|_| tree_sitter::Parser::new());
 
+        // Dotenv files are parsed without tree-sitter; handled before calling parse()
         let ts_language = match lang {
             Language::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
             Language::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
@@ -44,6 +45,12 @@ impl ParserPool {
             Language::Html => tree_sitter_html::LANGUAGE.into(),
             Language::C => tree_sitter_c::LANGUAGE.into(),
             Language::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+            Language::Dotenv => {
+                return Err(BexpError::Parse {
+                    file: file_path.to_string(),
+                    reason: "Dotenv files should not be parsed via tree-sitter".to_string(),
+                });
+            }
         };
 
         let result = (|| {

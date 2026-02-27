@@ -166,16 +166,16 @@ pub fn allocate(
         let file_path = &ranges[0].file_path;
         let score = file_scores.get(&file_id).copied().unwrap_or(0.0);
 
+        // Get total node count to decide full-file vs excerpt strategy
+        let total_node_count = file_node_counts.get(&file_id).copied().unwrap_or(0) as usize;
+        let matched_count = ranges.len();
+
         // Read file content
         let content = match std::fs::read_to_string(file_path) {
             Ok(c) => c,
             Err(_) => continue,
         };
         let total_lines = content.lines().count();
-
-        // Get total node count for this file (from batch query)
-        let total_node_count = file_node_counts.get(&file_id).copied().unwrap_or(0) as usize;
-        let matched_count = ranges.len();
 
         // Decide: full file or excerpt
         let use_full_file =
@@ -290,6 +290,15 @@ pub fn allocate(
         }
     }
 
+    // Pre-fetch skeleton data for candidate files in one batch query
+    let skel_file_ids: Vec<i64> = skeleton_files
+        .iter()
+        .take(config.max_skeleton_files * 2)
+        .map(|(id, _)| *id)
+        .collect();
+    let skel_cache = queries::get_skeleton_cache_batch(conn, &skel_file_ids)
+        .unwrap_or_default();
+
     for (file_id, score) in skeleton_files {
         if skeleton_remaining < config.min_skeleton_budget
             || allocation.skeletons.len() >= config.max_skeleton_files
@@ -297,12 +306,12 @@ pub fn allocate(
             break;
         }
 
-        let file = match queries::get_file_by_id(conn, file_id)? {
-            Some(f) => f,
+        let cached_row = match skel_cache.get(&file_id) {
+            Some(r) => r,
             None => continue,
         };
 
-        let ext = std::path::Path::new(&file.path)
+        let ext = std::path::Path::new(&cached_row.path)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
@@ -331,39 +340,16 @@ pub fn allocate(
 
         let mut chosen = None;
         for level in levels_to_try {
-            // Check DB skeleton cache first (via reader, no writer lock)
             let cached = match level {
-                DetailLevel::Minimal => conn
-                    .query_row(
-                        "SELECT skeleton_minimal FROM files WHERE id = ?1",
-                        rusqlite::params![file_id],
-                        |row| row.get::<_, Option<String>>(0),
-                    )
-                    .ok()
-                    .flatten(),
-                DetailLevel::Standard => conn
-                    .query_row(
-                        "SELECT skeleton_standard FROM files WHERE id = ?1",
-                        rusqlite::params![file_id],
-                        |row| row.get::<_, Option<String>>(0),
-                    )
-                    .ok()
-                    .flatten(),
-                DetailLevel::Detailed => conn
-                    .query_row(
-                        "SELECT skeleton_detailed FROM files WHERE id = ?1",
-                        rusqlite::params![file_id],
-                        |row| row.get::<_, Option<String>>(0),
-                    )
-                    .ok()
-                    .flatten(),
+                DetailLevel::Minimal => cached_row.skeleton_minimal.as_ref(),
+                DetailLevel::Standard => cached_row.skeleton_standard.as_ref(),
+                DetailLevel::Detailed => cached_row.skeleton_detailed.as_ref(),
             };
 
             let skel = if let Some(cached_skel) = cached {
-                cached_skel
+                cached_skel.clone()
             } else {
-                // Cache miss: generate on the fly (no writer lock to avoid deadlock)
-                let content = match std::fs::read_to_string(&file.path) {
+                let content = match std::fs::read_to_string(&cached_row.path) {
                     Ok(c) => c,
                     Err(_) => continue,
                 };
@@ -387,7 +373,7 @@ pub fn allocate(
         skeleton_remaining -= tokens;
         allocation.skeletons.push(SkeletonFile {
             file_id,
-            path: file.path.clone(),
+            path: cached_row.path.clone(),
             skeleton,
             tokens,
             level,

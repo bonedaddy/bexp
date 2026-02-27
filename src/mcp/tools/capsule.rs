@@ -14,14 +14,16 @@ pub async fn handle(
     }
 
     let budget = params.token_budget.unwrap_or(server.config.token_budget);
+    let cross_workspace = params.cross_workspace.unwrap_or(true);
 
     let result = server
         .capsule
-        .generate(
+        .generate_with_cross_workspace(
             &params.query,
             budget,
             params.session_id.as_deref(),
             params.intent.as_deref(),
+            cross_workspace,
         )
         .map_err(super::to_error_data)?;
 

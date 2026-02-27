@@ -10,9 +10,14 @@ pub async fn handle(server: &BexpServer) -> Result<CallToolResult, ErrorData> {
     };
 
     let watcher_active = server.indexer.watcher_active();
+    let index_ready = server.indexer.index_ready();
 
     let mut output = String::new();
     output.push_str("# bexp Index Status\n\n");
+    output.push_str(&format!(
+        "- **Ready:** {}\n",
+        if index_ready { "true" } else { "false" }
+    ));
     output.push_str(&format!("- **Files indexed:** {}\n", stats.file_count));
     output.push_str(&format!("- **Symbols (nodes):** {}\n", stats.node_count));
     output.push_str(&format!("- **Edges:** {}\n", stats.edge_count));

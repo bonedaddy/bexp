@@ -18,6 +18,8 @@ pub enum NodeKind {
     Constant,
     Import,
     External,
+    EnvVar,
+    ApiEndpoint,
 }
 
 impl std::fmt::Display for NodeKind {
@@ -44,6 +46,8 @@ impl NodeKind {
             Self::Constant => "constant",
             Self::Import => "import",
             Self::External => "external",
+            Self::EnvVar => "env_var",
+            Self::ApiEndpoint => "api_endpoint",
         }
     }
 
@@ -64,6 +68,8 @@ impl NodeKind {
             "constant" => Some(Self::Constant),
             "import" => Some(Self::Import),
             "external" => Some(Self::External),
+            "env_var" => Some(Self::EnvVar),
+            "api_endpoint" => Some(Self::ApiEndpoint),
             _ => None,
         }
     }
@@ -78,6 +84,8 @@ pub enum EdgeKind {
     Extends,
     TypeRef,
     Contains,
+    ReadsEnv,
+    DefinesApi,
 }
 
 impl std::fmt::Display for EdgeKind {
@@ -95,6 +103,8 @@ impl EdgeKind {
             Self::Extends => "extends",
             Self::TypeRef => "type_ref",
             Self::Contains => "contains",
+            Self::ReadsEnv => "reads_env",
+            Self::DefinesApi => "defines_api",
         }
     }
 
@@ -106,6 +116,8 @@ impl EdgeKind {
             "extends" => Some(Self::Extends),
             "type_ref" => Some(Self::TypeRef),
             "contains" => Some(Self::Contains),
+            "reads_env" => Some(Self::ReadsEnv),
+            "defines_api" => Some(Self::DefinesApi),
             _ => None,
         }
     }
@@ -168,6 +180,7 @@ pub enum Language {
     Html,
     C,
     Cpp,
+    Dotenv,
 }
 
 impl Language {
@@ -180,6 +193,7 @@ impl Language {
             Self::Html => "html",
             Self::C => "c",
             Self::Cpp => "cpp",
+            Self::Dotenv => "dotenv",
         }
     }
 
@@ -231,6 +245,8 @@ mod tests {
             NodeKind::Constant,
             NodeKind::Import,
             NodeKind::External,
+            NodeKind::EnvVar,
+            NodeKind::ApiEndpoint,
         ];
 
         for kind in all {
@@ -251,6 +267,8 @@ mod tests {
             EdgeKind::Extends,
             EdgeKind::TypeRef,
             EdgeKind::Contains,
+            EdgeKind::ReadsEnv,
+            EdgeKind::DefinesApi,
         ];
 
         for kind in all {

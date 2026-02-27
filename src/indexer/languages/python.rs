@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use tree_sitter::{Node, Tree};
 
 use crate::indexer::extractor::*;
@@ -26,6 +28,12 @@ impl LanguageExtractor for PythonExtractor {
             None,
         );
 
+        // Detect env var usage: os.environ['VAR'], os.environ.get('VAR'), os.getenv('VAR')
+        extract_env_vars(source, &mut nodes, &mut edges);
+
+        // Detect API endpoints: Flask @app.route, FastAPI @router.get, Django path()
+        detect_api_endpoints(source, file_path, &mut nodes, &mut edges);
+
         ExtractedFile {
             language: Language::Python,
             content_hash: String::new(),
@@ -34,6 +42,7 @@ impl LanguageExtractor for PythonExtractor {
             nodes,
             edges,
             unresolved_refs,
+            structure_hash: None,
         }
     }
 }
@@ -439,6 +448,162 @@ fn extract_calls(
                 continue;
             }
             extract_calls(child, source, parent_idx, unresolved_refs);
+        }
+    }
+}
+
+/// Detect API endpoint patterns: Flask (@app.route), FastAPI (@router.get), Django (path()).
+fn detect_api_endpoints(
+    source: &str,
+    file_path: &str,
+    nodes: &mut Vec<ExtractedNode>,
+    edges: &mut Vec<ExtractedEdge>,
+) {
+    let mut seen = HashSet::new();
+
+    // Flask/FastAPI decorators: @app.route('/path'), @router.get('/path'), @app.post('/path')
+    let decorator_re = regex_lite::Regex::new(
+        r#"@(?:app|router|bp|blueprint)\.(route|get|post|put|delete|patch|head|options)\(\s*['"]([^'"]*)['"]\s*"#,
+    )
+    .unwrap();
+
+    // Django url patterns: path('route/', view_func) in urls.py
+    let is_urls = file_path.ends_with("urls.py");
+    let django_re = regex_lite::Regex::new(
+        r#"path\(\s*['"]([^'"]*)['"]\s*,"#,
+    )
+    .unwrap();
+
+    for cap in decorator_re.captures_iter(source) {
+        let method_raw = cap.get(1).unwrap().as_str();
+        let method = if method_raw == "route" {
+            "GET".to_string()
+        } else {
+            method_raw.to_uppercase()
+        };
+        let path = cap.get(2).unwrap().as_str();
+        let key = format!("{method}:{path}");
+        if !seen.insert(key) {
+            continue;
+        }
+
+        let name = format!("{method} {path}");
+        let mut meta = HashMap::new();
+        meta.insert("api_method".to_string(), method);
+        meta.insert("api_path".to_string(), path.to_string());
+
+        let idx = nodes.len();
+        nodes.push(ExtractedNode {
+            kind: NodeKind::ApiEndpoint,
+            name,
+            qualified_name: Some(format!("{file_path}::api::{path}")),
+            signature: None,
+            docstring: None,
+            line_start: 0,
+            line_end: 0,
+            col_start: 0,
+            col_end: 0,
+            visibility: None,
+            is_export: false,
+            metadata: Some(meta),
+        });
+
+        if let Some(func_idx) = nodes.iter().rposition(|n| {
+            n.kind == NodeKind::Function || n.kind == NodeKind::Method
+        }) {
+            if func_idx < idx {
+                edges.push(ExtractedEdge {
+                    source_idx: func_idx,
+                    target_idx: idx,
+                    kind: EdgeKind::DefinesApi,
+                    confidence: 0.9,
+                    context: None,
+                });
+            }
+        }
+    }
+
+    if is_urls {
+        for cap in django_re.captures_iter(source) {
+            let path = cap.get(1).unwrap().as_str();
+            let key = format!("GET:{path}");
+            if !seen.insert(key) {
+                continue;
+            }
+
+            let name = format!("GET {path}");
+            let mut meta = HashMap::new();
+            meta.insert("api_method".to_string(), "GET".to_string());
+            meta.insert("api_path".to_string(), path.to_string());
+
+            nodes.push(ExtractedNode {
+                kind: NodeKind::ApiEndpoint,
+                name,
+                qualified_name: Some(format!("{file_path}::api::{path}")),
+                signature: None,
+                docstring: None,
+                line_start: 0,
+                line_end: 0,
+                col_start: 0,
+                col_end: 0,
+                visibility: None,
+                is_export: false,
+                metadata: Some(meta),
+            });
+        }
+    }
+}
+
+/// Detect environment variable reads: os.environ['VAR'], os.environ.get('VAR'), os.getenv('VAR').
+fn extract_env_vars(
+    source: &str,
+    nodes: &mut Vec<ExtractedNode>,
+    edges: &mut Vec<ExtractedEdge>,
+) {
+    let mut seen = HashSet::new();
+
+    let patterns = [
+        regex_lite::Regex::new(r#"os\.environ\[['"]([A-Z_][A-Z0-9_]*)['"]\]"#).unwrap(),
+        regex_lite::Regex::new(r#"os\.environ\.get\(\s*['"]([A-Z_][A-Z0-9_]*)['"]"#).unwrap(),
+        regex_lite::Regex::new(r#"os\.getenv\(\s*['"]([A-Z_][A-Z0-9_]*)['"]"#).unwrap(),
+    ];
+
+    let first_func_idx = nodes.iter().position(|n| {
+        n.kind == NodeKind::Function || n.kind == NodeKind::Method
+    });
+
+    for pattern in &patterns {
+        for cap in pattern.captures_iter(source) {
+            let var_name = cap.get(1).unwrap().as_str();
+            if !seen.insert(var_name.to_string()) {
+                continue;
+            }
+
+            let env_idx = nodes.len();
+            nodes.push(ExtractedNode {
+                kind: NodeKind::EnvVar,
+                name: var_name.to_string(),
+                qualified_name: Some(format!("env::{var_name}")),
+                signature: None,
+                docstring: None,
+                line_start: 0,
+                line_end: 0,
+                col_start: 0,
+                col_end: 0,
+                visibility: None,
+                is_export: false,
+                metadata: None,
+            });
+
+            if let Some(func_idx) = first_func_idx {
+                edges.push(ExtractedEdge {
+                    source_idx: func_idx,
+                    target_idx: env_idx,
+                    kind: EdgeKind::ReadsEnv,
+                    confidence: 0.9,
+                    context: None,
+                });
+            }
         }
     }
 }

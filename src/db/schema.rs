@@ -283,6 +283,17 @@ FROM nodes n
 JOIN files f ON f.id = n.file_id;
 "#;
 
+/// Migration 8: Observation consolidation, anti-patterns, and structural diff support.
+const M8_CONSOLIDATION_AND_STRUCTURE: &str = r#"
+ALTER TABLE observations ADD COLUMN consolidated_into INTEGER REFERENCES observations(id);
+ALTER TABLE observations ADD COLUMN anti_pattern TEXT;
+CREATE INDEX IF NOT EXISTS idx_observations_consolidated ON observations(consolidated_into);
+CREATE INDEX IF NOT EXISTS idx_observations_stale ON observations(is_stale);
+
+ALTER TABLE files ADD COLUMN structure_hash TEXT;
+CREATE INDEX IF NOT EXISTS idx_files_structure_hash ON files(structure_hash);
+"#;
+
 pub fn migrations() -> Migrations<'static> {
     Migrations::new(vec![
         M::up(M1_BASELINE),
@@ -292,5 +303,6 @@ pub fn migrations() -> Migrations<'static> {
         M::up(M5_RESOLVER_INDEXES),
         M::up(M6_FTS_FILE_PATH),
         M::up(M7_FTS_BACKFILL),
+        M::up(M8_CONSOLIDATION_AND_STRUCTURE),
     ])
 }

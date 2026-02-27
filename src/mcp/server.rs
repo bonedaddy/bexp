@@ -41,6 +41,8 @@ pub struct CapsuleParams {
         description = "Override auto-detected intent: 'debug', 'blast_radius', 'modify', 'explore'"
     )]
     pub intent: Option<String>,
+    #[schemars(description = "Include results from external workspace databases (default: true)")]
+    pub cross_workspace: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -144,6 +146,8 @@ pub struct QueryNodesParams {
     pub include_pagerank: Option<bool>,
     #[schemars(description = "Maximum results (default: 50)")]
     pub limit: Option<usize>,
+    #[schemars(description = "Include results from external workspace databases (default: true)")]
+    pub cross_workspace: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -197,6 +201,14 @@ pub struct ListSessionsParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct EnvLineageParams {
+    #[schemars(description = "Environment variable name to trace")]
+    pub var_name: String,
+    #[schemars(description = "List all detected environment variables instead of tracing one")]
+    pub list_all: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ReindexParams {
     #[schemars(description = "Specific file paths to reindex (relative to workspace root)")]
     pub files: Option<Vec<String>>,
@@ -231,7 +243,7 @@ impl BexpServer {
     }
 
     #[tool(
-        description = "Get a token-efficient context capsule for a query. Uses hybrid search (FTS5 + graph centrality) with intent detection to return full pivot files + skeletonized supporting files within a token budget."
+        description = "PRIMARY CODE SEARCH TOOL. Get a token-efficient context capsule for a query. Uses hybrid search (FTS5 + graph centrality) with intent detection to return full pivot files + skeletonized supporting files within a token budget. Use this to understand code, find implementations, or explore the codebase."
     )]
     async fn get_context_capsule(
         &self,
@@ -329,7 +341,7 @@ impl BexpServer {
     }
 
     #[tool(
-        description = "Cross-session hybrid search over saved observations. Combines FTS5 BM25 + recency decay (7-day half-life) + graph proximity."
+        description = "Search previously saved observations/insights (NOT code). Only returns results from save_observation calls. For searching code symbols use query_nodes or get_context_capsule instead."
     )]
     async fn search_memory(
         &self,
@@ -357,7 +369,7 @@ impl BexpServer {
     // -- New tools --
 
     #[tool(
-        description = "Search and filter code symbols (functions, classes, structs, etc.) with structured queries. Filter by name, kind, file path, visibility, or export status."
+        description = "Search indexed code symbols (functions, structs, traits, etc.) by name, kind, file path, visibility, or export status. Returns structured results with signatures and locations. Use this for targeted symbol lookup; use get_context_capsule for broader code understanding."
     )]
     async fn query_nodes(
         &self,
@@ -461,6 +473,19 @@ impl BexpServer {
     async fn get_config(&self) -> Result<CallToolResult, ErrorData> {
         super::tools::with_metrics("get_config", || super::tools::get_config::handle(self)).await
     }
+
+    #[tool(
+        description = "Trace environment variable usage across the codebase. Shows where an env var is defined (.env files) and which functions read it. Use list_all=true to see all detected env vars."
+    )]
+    async fn get_env_lineage(
+        &self,
+        Parameters(params): Parameters<EnvLineageParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        super::tools::with_metrics("get_env_lineage", || {
+            super::tools::env_lineage::handle(self, params)
+        })
+        .await
+    }
 }
 
 #[tool_handler]
@@ -488,13 +513,13 @@ impl ServerHandler for BexpServer {
                     detection, returns full pivot files + skeletonized supporting files \
                     within a token budget\n\n\
                  ## When to use each tool\n\
-                 - **Understand code**: `get_context_capsule` (broad), `get_skeleton` (single file), \
-                   `query_nodes` (structured symbol search)\n\
+                 - **Search/understand code** (use these first): `get_context_capsule` (broad search + context), \
+                   `query_nodes` (structured symbol search), `get_skeleton` (single file overview)\n\
                  - **Trace dependencies**: `get_impact_graph` (callers/callees), \
                    `search_logic_flow` (paths between symbols), `query_edges` (filter relationships)\n\
                  - **Inspect the index**: `index_status`, `graph_stats`, `list_files`, \
                    `get_unresolved_refs`, `get_config`\n\
-                 - **Memory across sessions**: `save_observation`, `search_memory`, \
+                 - **Session memory** (NOT for code search): `save_observation`, `search_memory`, \
                    `get_session_context`, `list_sessions`, `detect_staleness`\n\
                  - **Maintain the index**: `trigger_reindex` (after file changes), \
                    `submit_lsp_edges` (supplement with LSP data)\n\n\

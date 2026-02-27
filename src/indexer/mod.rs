@@ -3,6 +3,7 @@ pub mod languages;
 pub mod parser;
 pub mod resolver;
 pub mod scanner;
+pub mod structural_diff;
 pub mod watcher;
 
 use std::path::{Path, PathBuf};
@@ -209,6 +210,8 @@ impl IndexerService {
                         node_count: 0,
                         edge_count: 0,
                         changed_file_ids: Vec::new(),
+                        structural_changes: Vec::new(),
+                        structure_skip_count: 0,
                     });
                 }
             }
@@ -235,8 +238,14 @@ impl IndexerService {
         let extracted: Vec<(PathBuf, ExtractedFile)> = files
             .par_iter()
             .filter_map(|path| {
-                let ext = path.extension()?.to_str()?;
-                let lang = Language::from_extension(ext)?;
+                // Detect language: try extension first, then check for dotenv
+                let lang = if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    Language::from_extension(ext)?
+                } else if Scanner::is_dotenv_file(path) {
+                    Language::Dotenv
+                } else {
+                    return None;
+                };
 
                 // Per-file mtime check: skip unchanged files
                 let rel_path = self.relative_path(path);
@@ -273,6 +282,8 @@ impl IndexerService {
         let mut node_count = 0;
         let mut edge_count = 0;
         let mut changed_file_ids = Vec::new();
+        let mut structural_changes = Vec::new();
+        let mut structure_skip_count = 0;
 
         {
             let mut conn = self.db.writer()?;
@@ -281,13 +292,66 @@ impl IndexerService {
             for (path, extracted) in &extracted {
                 let rel_path = self.relative_path(path);
 
-                let file_id = queries::insert_file(
+                // Compute structure hash for this file
+                let new_structure_hash =
+                    extractor::compute_structure_hash(&extracted.nodes, &extracted.edges);
+
+                // Check if structure is unchanged
+                if let Ok(Some(old_file)) = queries::get_file_by_path(&tx, &rel_path) {
+                    if let Ok(Some(old_hash)) =
+                        queries::get_file_structure_hash(&tx, old_file.id)
+                    {
+                        if old_hash == new_structure_hash {
+                            structure_skip_count += 1;
+                            // Still update mtime/content_hash but skip node rewrite
+                            tx.execute(
+                                "UPDATE files SET content_hash = ?1, mtime_ns = ?2, size_bytes = ?3, indexed_at = datetime('now')
+                                 WHERE id = ?4",
+                                rusqlite::params![
+                                    extracted.content_hash,
+                                    extracted.mtime_ns,
+                                    extracted.size_bytes as i64,
+                                    old_file.id
+                                ],
+                            ).map_err(BexpError::Database)?;
+                            continue;
+                        } else {
+                            // Structure changed — compute diff for report
+                            if let Ok(old_nodes) =
+                                queries::get_nodes_summary_for_file(&tx, old_file.id)
+                            {
+                                let new_nodes: Vec<_> = extracted
+                                    .nodes
+                                    .iter()
+                                    .map(|n| {
+                                        (
+                                            n.kind.as_str().to_string(),
+                                            n.name.clone(),
+                                            n.signature.clone(),
+                                            n.line_start as i64,
+                                            n.line_end as i64,
+                                        )
+                                    })
+                                    .collect();
+                                let diff = structural_diff::compute_structural_diff(
+                                    &rel_path, &old_nodes, &new_nodes,
+                                );
+                                if !diff.is_empty() {
+                                    structural_changes.push(diff);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let file_id = queries::insert_file_with_structure_hash(
                     &tx,
                     &rel_path,
                     extracted.language.as_str(),
                     &extracted.content_hash,
                     extracted.mtime_ns,
                     extracted.size_bytes as i64,
+                    Some(&new_structure_hash),
                 )?;
                 file_count += 1;
                 changed_file_ids.push(file_id);
@@ -314,6 +378,7 @@ impl IndexerService {
             files = file_count,
             nodes = node_count,
             edges = edge_count,
+            structure_skips = structure_skip_count,
             "Index complete"
         );
         crate::metrics::record_index_complete(file_count, node_count, edge_count);
@@ -323,6 +388,8 @@ impl IndexerService {
             node_count,
             edge_count,
             changed_file_ids,
+            structural_changes,
+            structure_skip_count,
         })
     }
 
@@ -331,6 +398,8 @@ impl IndexerService {
         let mut node_count = 0;
         let mut edge_count = 0;
         let mut changed_file_ids = Vec::new();
+        let mut structural_changes = Vec::new();
+        let mut structure_skip_count = 0;
 
         // Phase 1: Parse — check mtimes (reader), parse changed files, collect deletions
         struct Deletion {
@@ -407,18 +476,62 @@ impl IndexerService {
             }
 
             for pf in &parsed_files {
-                // Delete old data
+                let new_structure_hash =
+                    extractor::compute_structure_hash(&pf.extracted.nodes, &pf.extracted.edges);
+
+                // Check if structure is unchanged
                 if let Ok(Some(old)) = queries::get_file_by_path(&tx, &pf.rel_path) {
+                    if let Ok(Some(old_hash)) = queries::get_file_structure_hash(&tx, old.id) {
+                        if old_hash == new_structure_hash {
+                            structure_skip_count += 1;
+                            tx.execute(
+                                "UPDATE files SET content_hash = ?1, mtime_ns = ?2, size_bytes = ?3, indexed_at = datetime('now')
+                                 WHERE id = ?4",
+                                rusqlite::params![
+                                    pf.extracted.content_hash,
+                                    pf.extracted.mtime_ns,
+                                    pf.extracted.size_bytes as i64,
+                                    old.id
+                                ],
+                            ).map_err(BexpError::Database)?;
+                            continue;
+                        }
+                    }
+                    // Structure changed — compute diff
+                    if let Ok(old_nodes) = queries::get_nodes_summary_for_file(&tx, old.id) {
+                        let new_nodes: Vec<_> = pf
+                            .extracted
+                            .nodes
+                            .iter()
+                            .map(|n| {
+                                (
+                                    n.kind.as_str().to_string(),
+                                    n.name.clone(),
+                                    n.signature.clone(),
+                                    n.line_start as i64,
+                                    n.line_end as i64,
+                                )
+                            })
+                            .collect();
+                        let diff = structural_diff::compute_structural_diff(
+                            &pf.rel_path, &old_nodes, &new_nodes,
+                        );
+                        if !diff.is_empty() {
+                            structural_changes.push(diff);
+                        }
+                    }
+
                     queries::delete_file_data(&tx, old.id)?;
                 }
 
-                let file_id = queries::insert_file(
+                let file_id = queries::insert_file_with_structure_hash(
                     &tx,
                     &pf.rel_path,
                     pf.extracted.language.as_str(),
                     &pf.extracted.content_hash,
                     pf.extracted.mtime_ns,
                     pf.extracted.size_bytes as i64,
+                    Some(&new_structure_hash),
                 )?;
                 file_count += 1;
                 changed_file_ids.push(file_id);
@@ -446,6 +559,8 @@ impl IndexerService {
             node_count,
             edge_count,
             changed_file_ids,
+            structural_changes,
+            structure_skip_count,
         })
     }
 
@@ -469,8 +584,19 @@ impl IndexerService {
             .unwrap_or(0);
 
         let content_hash = format!("{:016x}", xxhash_rust::xxh3::xxh3_64(content.as_bytes()));
-
         let rel_path = self.relative_path(path);
+
+        // Dotenv files bypass tree-sitter
+        if lang == Language::Dotenv {
+            let mut extracted =
+                languages::dotenv::extract_dotenv(&content, &rel_path);
+            extracted.content_hash = content_hash;
+            extracted.mtime_ns = mtime_ns;
+            extracted.size_bytes = metadata.len();
+            extracted.structure_hash =
+                Some(extractor::compute_structure_hash(&extracted.nodes, &extracted.edges));
+            return Ok(extracted);
+        }
 
         self.parser_pool.parse(
             &content,
@@ -496,6 +622,12 @@ impl IndexerService {
             tracing::info!(edges = cross, "Cross-workspace resolution created edges");
         }
 
+        // Detect shared types after resolution
+        let _shared = resolver::detect_shared_types(&conn).unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "Shared type detection failed");
+            0
+        });
+
         Ok(local + cross)
     }
 }
@@ -507,6 +639,10 @@ pub struct IndexReport {
     pub edge_count: usize,
     /// File IDs that were changed in this index operation (for incremental graph updates).
     pub changed_file_ids: Vec<i64>,
+    /// Structural changes detected during indexing.
+    pub structural_changes: Vec<structural_diff::StructuralChange>,
+    /// Number of files skipped because structure_hash was unchanged.
+    pub structure_skip_count: usize,
 }
 
 #[cfg(test)]

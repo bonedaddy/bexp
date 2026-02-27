@@ -83,6 +83,18 @@ pub fn insert_file(
     mtime_ns: i64,
     size_bytes: i64,
 ) -> Result<i64> {
+    insert_file_with_structure_hash(conn, path, language, content_hash, mtime_ns, size_bytes, None)
+}
+
+pub fn insert_file_with_structure_hash(
+    conn: &Connection,
+    path: &str,
+    language: &str,
+    content_hash: &str,
+    mtime_ns: i64,
+    size_bytes: i64,
+    structure_hash: Option<&str>,
+) -> Result<i64> {
     // Delete old nodes first if file exists (cascading delete handles edges)
     conn.execute(
         "DELETE FROM nodes WHERE file_id IN (SELECT id FROM files WHERE path = ?1)",
@@ -90,18 +102,19 @@ pub fn insert_file(
     )?;
 
     conn.execute(
-        "INSERT INTO files (path, language, content_hash, mtime_ns, size_bytes)
-         VALUES (?1, ?2, ?3, ?4, ?5)
+        "INSERT INTO files (path, language, content_hash, mtime_ns, size_bytes, structure_hash)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(path) DO UPDATE SET
              language = excluded.language,
              content_hash = excluded.content_hash,
              mtime_ns = excluded.mtime_ns,
              size_bytes = excluded.size_bytes,
+             structure_hash = excluded.structure_hash,
              indexed_at = datetime('now'),
              skeleton_minimal = NULL,
              skeleton_standard = NULL,
              skeleton_detailed = NULL",
-        params![path, language, content_hash, mtime_ns, size_bytes],
+        params![path, language, content_hash, mtime_ns, size_bytes, structure_hash],
     )?;
 
     // Get the actual file ID (last_insert_rowid unreliable on upsert)
@@ -382,6 +395,53 @@ pub fn update_file_skeleton(
     let sql = format!("UPDATE files SET {col} = ?1, {tok_col} = ?2 WHERE id = ?3");
     conn.execute(&sql, params![skeleton, token_count, file_id])?;
     Ok(())
+}
+
+/// Cached skeleton data for batch retrieval.
+#[derive(Debug, Clone)]
+pub struct SkeletonCacheRow {
+    pub path: String,
+    pub skeleton_minimal: Option<String>,
+    pub skeleton_standard: Option<String>,
+    pub skeleton_detailed: Option<String>,
+}
+
+/// Batch-fetch file paths and cached skeletons for a set of file IDs.
+pub fn get_skeleton_cache_batch(
+    conn: &Connection,
+    file_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, SkeletonCacheRow>> {
+    if file_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders: Vec<String> = (1..=file_ids.len()).map(|i| format!("?{i}")).collect();
+    let in_clause = placeholders.join(",");
+    let sql = format!(
+        "SELECT id, path, skeleton_minimal, skeleton_standard, skeleton_detailed
+         FROM files WHERE id IN ({in_clause})"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = file_ids
+        .iter()
+        .map(|&id| Box::new(id) as Box<dyn rusqlite::types::ToSql>)
+        .collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
+    let rows = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                SkeletonCacheRow {
+                    path: row.get(1)?,
+                    skeleton_minimal: row.get(2)?,
+                    skeleton_standard: row.get(3)?,
+                    skeleton_detailed: row.get(4)?,
+                },
+            ))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
 }
 
 /// Get all files missing a skeleton cache for the given level.
@@ -1340,5 +1400,146 @@ pub fn get_edges_for_nodes(conn: &Connection, node_ids: &[i64]) -> Result<Vec<Ed
             })
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Get the structure_hash for a file by its ID.
+pub fn get_file_structure_hash(conn: &Connection, file_id: i64) -> Result<Option<String>> {
+    let result: Option<String> = conn
+        .query_row(
+            "SELECT structure_hash FROM files WHERE id = ?1",
+            params![file_id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+    Ok(result)
+}
+
+/// Get a summary of nodes for a file: (kind, name, signature, line_start, line_end).
+pub fn get_nodes_summary_for_file(
+    conn: &Connection,
+    file_id: i64,
+) -> Result<Vec<(String, String, Option<String>, i64, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT kind, name, signature, line_start, line_end
+         FROM nodes WHERE file_id = ?1
+         ORDER BY line_start",
+    )?;
+    let rows = stmt
+        .query_map(params![file_id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+/// Find EnvVar nodes by name.
+pub fn find_env_var_nodes(conn: &Connection, var_name: &str) -> Result<Vec<NodeRecord>> {
+    let mut stmt = conn.prepare(
+        "SELECT n.id, n.file_id, n.kind, n.name, n.qualified_name, n.signature, n.docstring,
+                n.line_start, n.line_end, n.col_start, n.col_end, n.visibility, n.is_export, n.metadata
+         FROM nodes n
+         WHERE n.kind = 'env_var' AND n.name = ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![var_name], |row| {
+            Ok(NodeRecord {
+                id: row.get(0)?,
+                file_id: row.get(1)?,
+                kind: row.get(2)?,
+                name: row.get(3)?,
+                qualified_name: row.get(4)?,
+                signature: row.get(5)?,
+                docstring: row.get(6)?,
+                line_start: row.get(7)?,
+                line_end: row.get(8)?,
+                col_start: row.get(9)?,
+                col_end: row.get(10)?,
+                visibility: row.get(11)?,
+                is_export: row.get::<_, i32>(12)? != 0,
+                metadata: row.get(13)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+/// Find all edges of kind 'reads_env' targeting the given env var node IDs,
+/// returning the source node + its file path.
+pub fn find_env_readers(
+    conn: &Connection,
+    env_node_ids: &[i64],
+) -> Result<Vec<(NodeRecord, String)>> {
+    if env_node_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders: Vec<String> = (1..=env_node_ids.len()).map(|i| format!("?{i}")).collect();
+    let sql = format!(
+        "SELECT n.id, n.file_id, n.kind, n.name, n.qualified_name, n.signature, n.docstring,
+                n.line_start, n.line_end, n.col_start, n.col_end, n.visibility, n.is_export, n.metadata,
+                f.path
+         FROM edges e
+         JOIN nodes n ON n.id = e.source_node_id
+         JOIN files f ON f.id = n.file_id
+         WHERE e.kind = 'reads_env' AND e.target_node_id IN ({})",
+        placeholders.join(",")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut bind_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    for &id in env_node_ids {
+        bind_values.push(Box::new(id));
+    }
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
+    let rows = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok((
+                NodeRecord {
+                    id: row.get(0)?,
+                    file_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    name: row.get(3)?,
+                    qualified_name: row.get(4)?,
+                    signature: row.get(5)?,
+                    docstring: row.get(6)?,
+                    line_start: row.get(7)?,
+                    line_end: row.get(8)?,
+                    col_start: row.get(9)?,
+                    col_end: row.get(10)?,
+                    visibility: row.get(11)?,
+                    is_export: row.get::<_, i32>(12)? != 0,
+                    metadata: row.get(13)?,
+                },
+                row.get::<_, String>(14)?,
+            ))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+/// List all env var nodes with reader counts.
+pub fn list_all_env_vars(conn: &Connection) -> Result<Vec<(String, i64, Option<String>)>> {
+    let mut stmt = conn.prepare(
+        "SELECT n.name, COUNT(DISTINCT e.source_node_id) as reader_count, n.metadata
+         FROM nodes n
+         LEFT JOIN edges e ON e.target_node_id = n.id AND e.kind = 'reads_env'
+         WHERE n.kind = 'env_var'
+         GROUP BY n.name
+         ORDER BY reader_count DESC, n.name",
+    )?;
+    let rows = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
     Ok(rows)
 }
